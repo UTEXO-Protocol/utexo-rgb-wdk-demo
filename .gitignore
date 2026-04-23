@@ -39,3 +39,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# generated worklet bundle — re-create with `npx wdk-worklet-bundler generate`
+/.wdk-bundle/
+/.wdk/
+
+# local env (keep .env.example committed)
+/.env
