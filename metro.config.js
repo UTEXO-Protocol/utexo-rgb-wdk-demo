@@ -11,7 +11,8 @@ const config = getDefaultConfig(__dirname)
 const path = require('path')
 config.watchFolders = [
   ...(config.watchFolders ?? []),
-  path.resolve(__dirname, '.wdk-bundle')
+  path.resolve(__dirname, '.wdk-bundle'),
+  path.resolve(__dirname, 'canary-worklet')
 ]
 
 module.exports = config

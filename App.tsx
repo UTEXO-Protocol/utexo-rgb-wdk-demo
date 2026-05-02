@@ -21,6 +21,11 @@ import { WdkAppProvider, useWdkApp } from '@tetherto/wdk-react-native-core'
 import bundle from './.wdk-bundle/wdk-worklet.bundle.js'
 
 import { WalletGate } from './src/WalletGate'
+import { CanaryScreen } from './src/CanaryScreen'
+
+// Set EXPO_PUBLIC_RUN_CANARY=1 to bypass wdk and render the bare-only
+// canary screen for Canary 2 (rgb-lightning-node-bare smoke test).
+const RUN_CANARY = process.env.EXPO_PUBLIC_RUN_CANARY === '1'
 
 const RGB_NETWORK = (process.env.EXPO_PUBLIC_RGB_NETWORK ?? 'regtest') as
   | 'mainnet' | 'testnet' | 'regtest'
@@ -94,6 +99,16 @@ function CenterBox ({ children }: { children: React.ReactNode }) {
 }
 
 export default function App () {
+  if (RUN_CANARY) {
+    return (
+      <SafeAreaProvider>
+        <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
+          <StatusBar barStyle="light-content" />
+          <CanaryScreen />
+        </SafeAreaView>
+      </SafeAreaProvider>
+    )
+  }
   return (
     <SafeAreaProvider>
       <WdkAppProvider bundle={{ bundle }} wdkConfigs={wdkConfigs}>
