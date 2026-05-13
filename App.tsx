@@ -35,6 +35,9 @@ const RGB_TRANSPORT_ENDPOINT = process.env.EXPO_PUBLIC_RGB_TRANSPORT_ENDPOINT ??
 const BTC_NETWORK = process.env.EXPO_PUBLIC_BTC_NETWORK ?? 'regtest'
 const BTC_INDEXER_URL = process.env.EXPO_PUBLIC_BTC_INDEXER_URL ?? 'tcp://localhost:50001'
 
+const RGB_LN_NETWORK = (process.env.EXPO_PUBLIC_RGB_LN_NETWORK ?? 'regtest') as
+  | 'mainnet' | 'testnet' | 'regtest' | 'signet'
+
 // rgb-lib stores its SQLite state (UTXO allocations, asset metadata,
 // in-flight transfers) under `dataDir`. Losing this directory loses all
 // RGB asset balances even though the seed still derives the right
@@ -47,6 +50,11 @@ const BTC_INDEXER_URL = process.env.EXPO_PUBLIC_BTC_INDEXER_URL ?? 'tcp://localh
 // apply as usual. The `file://` prefix is stripped because rgb-lib
 // expects a plain OS path.
 const RGB_DATA_DIR = Paths.document.uri.replace(/^file:\/\//, '') + 'rgb-wallet'
+
+// rgb-lightning-node owns its own SQLite + LDK channel state. Keep it
+// under a dedicated subfolder so the on-chain rgb-lib state and the LN
+// state stay separable, while both surviving app relaunches.
+const RGB_LN_DATA_DIR = Paths.document.uri.replace(/^file:\/\//, '') + 'rgb-lightning'
 
 // The generic is intentionally loose — each network has its own config shape.
 const wdkConfigs: import('@tetherto/wdk-react-native-core').WdkConfigs<Record<string, unknown>> = {
@@ -65,6 +73,13 @@ const wdkConfigs: import('@tetherto/wdk-react-native-core').WdkConfigs<Record<st
       config: {
         network: BTC_NETWORK,
         client: { type: 'electrum', clientConfig: { url: BTC_INDEXER_URL } }
+      }
+    },
+    'rgb-lightning': {
+      blockchain: 'rgb-lightning',
+      config: {
+        network: RGB_LN_NETWORK,
+        dataDir: RGB_LN_DATA_DIR
       }
     }
   }
@@ -112,7 +127,7 @@ export default function App () {
   return (
     <SafeAreaProvider>
       <WdkAppProvider bundle={{ bundle }} wdkConfigs={wdkConfigs}>
-        <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
+        <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
           <StatusBar barStyle="light-content" />
           <AppShell />
         </SafeAreaView>
