@@ -14,11 +14,16 @@
 //      LN operation works.
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ActivityIndicator, Alert, ScrollView,
+  ActivityIndicator, Alert, Platform, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View
 } from 'react-native'
 import * as Clipboard from 'expo-clipboard'
 import { useAccount } from '@tetherto/wdk-react-native-core'
+
+// Android emulator's `localhost`/127.0.0.1 is the emulator itself, NOT the
+// host. The host-machine alias from inside the AVD is `10.0.2.2`. iOS sim
+// shares the host's loopback so 127.0.0.1 works there.
+const HOST_LOOPBACK = Platform.OS === 'android' ? '10.0.2.2' : '127.0.0.1'
 
 // Mirror of WalletAccountRgbLightning.PENDING_ADDRESS — kept verbatim
 // here so the screen can detect it before the node is unlocked.
@@ -106,6 +111,7 @@ type LnExt = {
     settled?: number; future?: number; spendable?: number
     offchain_outbound?: number; offchain_inbound?: number
   }>
+  refreshTransfers: (req: { asset_id?: string; skip_sync?: boolean }) => Promise<unknown>
   createRgbInvoice: (req: { min_confirmations: number; asset_id?: string }) => Promise<{
     recipient_id?: string
     invoice?: string
@@ -135,12 +141,12 @@ export function RgbLightningScreen () {
   // `rgb-lightning-node/regtest.sh start` (compose.yaml in that repo,
   // with rgb-proxy moved off port 3000 to 3001 to avoid the demo's
   // dev-server collision).
-  const [bitcoindHost, setBitcoindHost] = useState('127.0.0.1')
+  const [bitcoindHost, setBitcoindHost] = useState(HOST_LOOPBACK)
   const [bitcoindPort, setBitcoindPort] = useState('18443')
   const [bitcoindUser, setBitcoindUser] = useState('user')
   const [bitcoindPass, setBitcoindPass] = useState('password')
-  const [indexerUrl, setIndexerUrl] = useState('tcp://127.0.0.1:50001')
-  const [proxyEndpoint, setProxyEndpoint] = useState('rpc://127.0.0.1:3001/json-rpc')
+  const [indexerUrl, setIndexerUrl] = useState(`tcp://${HOST_LOOPBACK}:50001`)
+  const [proxyEndpoint, setProxyEndpoint] = useState(`rpc://${HOST_LOOPBACK}:3001/json-rpc`)
 
   // ─── Node state ───────────────────────────────────────────────────────
   const [nodeInfo, setNodeInfo] = useState<Awaited<ReturnType<LnExt['getNodeInfo']>> | null>(null)
@@ -372,6 +378,14 @@ export function RgbLightningScreen () {
   const onLoadAssetBalance = useCallback(async () => {
     if (!assetInvAssetId.trim()) return
     await guard('Loading asset balance…', async () => {
+      // refreshTransfers reconciles on-chain state with rgb-lib's view.
+      // Without this, force-close recovered allocations stay in `future`
+      // and never roll into `settled` / `spendable`.
+      // SDK's refresh only takes `skip_sync`; pass false to force an
+      // electrum re-scan so post-force-close on-chain allocations roll
+      // from `future` into `settled`.
+      await ext!.refreshTransfers({ skip_sync: false }).catch(() => undefined)
+      await ext!.refreshTransfers({ skip_sync: false }).catch(() => undefined)
       const bal = await ext!.getAssetBalance(assetInvAssetId.trim())
       setAssetBalances(prev => ({ ...prev, [assetInvAssetId.trim()]: bal }))
       Alert.alert('Asset balance', JSON.stringify(bal, null, 2))
