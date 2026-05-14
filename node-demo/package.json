@@ -1,0 +1,22 @@
+{
+  "name": "utexo-rgb-wdk-node-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "cli.mjs",
+  "bin": {
+    "wdk-rln": "./cli.mjs"
+  },
+  "scripts": {
+    "start": "node cli.mjs"
+  },
+  "dependencies": {
+    "@tetherto/wdk-wallet": "^1.0.0-beta.7",
+    "@utexo/rgb-lightning-node-nodejs": "github:Jainakin/rgb-lightning-node-nodejs#v0.1.0-beta.0",
+    "@utexo/wdk-rgb-lightning": "file:../../wdk-rgb-lightning",
+    "bip39": "3.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
