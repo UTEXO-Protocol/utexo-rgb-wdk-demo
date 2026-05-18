@@ -136,8 +136,10 @@ async function main (): Promise<void> {
     throw new Error('runner finished but no report attached')
   }
 
+  // Some payloads include BigInt (e.g. asset amounts > 2^53). Stringify
+  // them so JSON.stringify doesn't throw at write time.
   const reportPath = path.join(REPORTS_DIR, `${report.sessionId}.json`)
-  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2))
+  fs.writeFileSync(reportPath, JSON.stringify(report, (_k, v) => typeof v === 'bigint' ? v.toString() : v, 2))
   logEvent('success', 'e2e', 'report', `wrote ${reportPath}`)
   console.log(`\n=== SUMMARY ===`)
   console.log(`total=${report.total} pass=${report.passed} fail=${report.failed} skip=${report.skipped} expected-fail=${report.expectedFail} unexpected-pass=${report.unexpectedPass}`)
