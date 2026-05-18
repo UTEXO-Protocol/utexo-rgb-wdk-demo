@@ -9,7 +9,7 @@ import React, { useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useWalletManager } from '@tetherto/wdk-react-native-core'
 import type { WdkAppState } from '@tetherto/wdk-react-native-core'
-import { RgbLightningScreen } from './RgbLightningScreen'
+import { RgbLightningScreen } from './rln/RgbLightningScreen'
 
 const WALLET_ID = 'rgb-demo-wallet'
 

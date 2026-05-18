@@ -46,3 +46,6 @@ yarn-error.*
 
 # local env (keep .env.example committed)
 /.env
+
+# Prebuilt bare-addon xcframeworks (copied from node_modules at link time)
+*.xcframework/

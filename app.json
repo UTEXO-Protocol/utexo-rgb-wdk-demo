@@ -2,6 +2,7 @@
   "expo": {
     "name": "utexo-rgb-wdk-demo",
     "slug": "utexo-rgb-wdk-demo",
+    "scheme": "utexo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
