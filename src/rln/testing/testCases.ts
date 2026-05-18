@@ -1127,6 +1127,83 @@ export const TEST_CASES: TestCase[] = [
 
   // ─────────────────────── Phase 12: channel close ───────────────────────
   {
+    // Force close on a BTC channel. Opens its OWN fresh channel rather
+    // than reusing the t30/t31 channel — that one is reserved for t100's
+    // coop-close test (otherwise force-closing it here would cascade-skip
+    // t100). The force path goes through LDK's holder-broadcast +
+    // post-CSV sweep, exercising the external-signer's per-commitment +
+    // DelayedPaymentOutput descriptor signing paths.
+    id: 't99.forceCloseBtc',
+    title: 'force close BTC channel (opens fresh channel)',
+    category: 'channels',
+    dependsOn: ['t12.btcBalance', 't21.connectPeer'],
+    async run (ctx) {
+      const peer = ctx.state[PEER_ADDR_KEY] as string
+      const peerPubkey = ctx.state[PEER_PUBKEY_KEY] as string
+
+      // Make sure peer is still connected — after a long test run the
+      // LDK keepalive may have dropped the noise session.
+      await ctx.ext.connectPeer(peer).catch(() => undefined)
+      await sleep(1500)
+
+      const beforeIds = await snapshotChannelIds(ctx.ext)
+
+      // Small capacity — we only need a working channel to close it.
+      // Above `channel_capacity_min_sat: 5506` (from nodeinfo) with
+      // headroom for anchor reserves. No push — the test doesn't move
+      // funds through this channel.
+      const opened = await ctx.ext.openChannel({
+        peer_pubkey_and_opt_addr: peer,
+        capacity_sat: 80000,
+        push_msat: 0,
+        public: true,
+        with_anchors: true
+      })
+
+      // Wait for the new channel to reach `ready`. Mine + sync each
+      // iteration the same way t31 does.
+      let channelId: string | null = null
+      const readyDeadline = Date.now() + 120000
+      while (Date.now() < readyDeadline) {
+        const chans = await ctx.ext.listChannels().catch(() => [])
+        const list = Array.isArray(chans) ? chans : []
+        const fresh = list.filter((c) => c.channel_id && !beforeIds.has(c.channel_id) && c.peer_pubkey === peerPubkey)
+        const ready = fresh.find((c) => c.ready || (c as { is_usable?: boolean }).is_usable)
+        if (ready && ready.channel_id) {
+          channelId = ready.channel_id
+          break
+        }
+        await ctx.chain.mineBlocks(1).catch(() => undefined)
+        await ctx.ext.sync().catch(() => undefined)
+        await ctx.peer.sync().catch(() => undefined)
+        await sleep(2000)
+      }
+      if (!channelId) throw new Error(`timeout waiting for force-close target channel to become ready (120s). opened=${JSON.stringify(opened)}`)
+
+      // Force close. Unlike coop close, this doesn't require an active
+      // peer connection — LDK broadcasts the local commitment directly.
+      await ctx.ext.closeChannel({ channel_id: channelId, peer_pubkey: peerPubkey, force: true })
+
+      // Mine past the CSV locktime so the to_local output becomes
+      // spendable, then a few extra blocks to let the sweep transaction
+      // confirm. CSV_CONFIRMATIONS=144 (RLN default).
+      await ctx.chain.mineBlocks(CSV_CONFIRMATIONS + 6)
+      await ctx.ext.sync().catch(() => undefined)
+
+      // Verify terminal state: the channel should be gone from
+      // listChannels, OR present but not `ready`/`is_usable` (some LDK
+      // builds keep a `ClosingNegotiationReady` / similar terminal entry
+      // around briefly before garbage-collecting it).
+      const afterChannels = await ctx.ext.listChannels().catch(() => [])
+      const afterList = Array.isArray(afterChannels) ? afterChannels : []
+      const stillThere = afterList.find((c) => c.channel_id === channelId)
+      if (stillThere && (stillThere.ready || (stillThere as { is_usable?: boolean }).is_usable)) {
+        throw new Error(`channel still usable after force-close + CSV: ${JSON.stringify(stillThere)}`)
+      }
+      return { channel_id: channelId, post_close: stillThere ?? 'removed_from_listChannels' }
+    }
+  },
+  {
     id: 't100.coopCloseBtc',
     title: 'cooperative close (BTC channel)',
     category: 'channels',
