@@ -32,7 +32,11 @@ const CATEGORIES = Array.from(new Set(TEST_CASES.map((c) => c.category)))
 
 export function E2ETab ({ ext }: { ext: LnExt | null }): React.ReactElement {
   // ── Config — defaults match the regtest stack the UnlockGate uses ──
-  const [peerBaseUrl, setPeerBaseUrl] = React.useState(`http://${HOST_LOOPBACK}:3001`)
+  // Peer RLN daemon HTTP API. Port 3002 matches the local regtest setup
+  // where the standalone peer daemon is launched with
+  // `--daemon-listening-port 3002` (3001 is occupied by the RGB proxy
+  // running in Docker, which uses /json-rpc — different transport).
+  const [peerBaseUrl, setPeerBaseUrl] = React.useState(`http://${HOST_LOOPBACK}:3002`)
   const [btcRpcHost, setBtcRpcHost] = React.useState(HOST_LOOPBACK)
   const [btcRpcPort, setBtcRpcPort] = React.useState('18443')
   const [btcRpcUser, setBtcRpcUser] = React.useState('user')
