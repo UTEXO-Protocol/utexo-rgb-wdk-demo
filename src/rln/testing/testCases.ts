@@ -1066,17 +1066,22 @@ export const TEST_CASES: TestCase[] = [
       const beforeIds = await snapshotChannelIds(ctx.ext)
       ctx.state[CHANNEL_IDS_BEFORE_ASSET_OPEN_KEY] = Array.from(beforeIds)
 
-      // Pre-flight: ensure we have fresh uncolored UTXOs.
+      // Pre-flight: createUtxos idempotently (no-ops if 5+ colorables
+      // exist already).
       //
-      // The daemon's openchannel-with-asset path needs an UNCOLORED
-      // UTXO to pay the funding tx fees. After a busy suite (channel
-      // opens, sendBtc, RGB receives) the only uncolored UTXOs left
-      // can all be marked "reserved" by rgb-lib / BDK even though
-      // they show as `colorable: false` in listUnspents — observed
-      // error: `No uncolored UTXOs are available (hint: call createutxos)`.
-      // Calling createUtxos rebalances: spends a vanilla input,
-      // produces several small colored UTXOs + a fresh change UTXO
-      // that's uncolored and unreserved.
+      // NOTE: this pre-flight does NOT reliably prevent `No uncolored
+      // UTXOs are available (hint: call createutxos)` from t70 on
+      // fresh wallets. We've tried up_to:false, bitcoind self-deposit,
+      // combinations of both — all fail identically. iOS only succeeds
+      // when carrying significant accumulated state (multiple prior
+      // suite runs). Fresh wallets (Android after pm clear, Node
+      // fresh) trip on this consistently.
+      //
+      // This is a daemon-side issue in rgb-lib's openchannel-with-
+      // asset UTXO selector — likely it's filtering on tx-graph
+      // ancestry or reserved-slot tracking that fresh wallets can't
+      // satisfy. Flagged to Roman as a finding; once resolved this
+      // test should pass on fresh wallets too.
       await ctx.ext.createUtxos({ up_to: true, num: 5, size: 32000, fee_rate: 5, skip_sync: false })
         .catch((e: Error) => {
           if (!String(e.message).includes('Allocations already available')) throw e
