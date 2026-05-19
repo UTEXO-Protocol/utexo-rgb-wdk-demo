@@ -56,7 +56,17 @@ async function snapshotChannelIds (ext: TestContext['ext']): Promise<Set<string>
 
 // Knobs the suite uses. Override via env if needed; defaults match the
 // regtest stack from `rgb-lightning-node/regtest.sh start`.
-const FUND_BTC = Number(process.env.EXPO_PUBLIC_E2E_FUND_BTC ?? '0.01')
+// 0.05 BTC = 5M sat. Sized to leave headroom after consuming UTXOs for:
+//   - createUtxos (5× colored at 32k + change ≈ 200k)
+//   - openBtcChannel (200k funding + reserves)
+//   - forceCloseBtc (80k funding + reserves)
+//   - sendBtcToPeer (5k + fees)
+//   - asset channel pre-flight UTXO rebalance
+// Long-lived test wallets (iOS simulators carrying state) had been
+// papering over this with accumulated balance; fresh wallets (Android
+// after `pm clear`, Node-side) need explicit headroom or t70 trips
+// `No uncolored UTXOs are available`.
+const FUND_BTC = Number(process.env.EXPO_PUBLIC_E2E_FUND_BTC ?? '0.05')
 const CSV_CONFIRMATIONS = 144 // RLN default for force-close locktime
 const CHANNEL_CONFIRMATIONS = 6
 const INVOICE_AMT_MSAT = 5000000
