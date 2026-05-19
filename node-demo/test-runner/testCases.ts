@@ -228,22 +228,26 @@ export const TEST_CASES: TestCase[] = [
   },
   {
     id: 't15.estimateFee',
-    title: 'estimateFee(6) returns a fee rate (regtest expected-fail)',
+    title: 'estimateFee(6) returns a fee rate',
     category: 'btc',
-    // bitcoind on regtest doesn't accumulate the fee history needed
-    // by `estimatesmartfee`, so RLN surfaces the bitcoind error as
-    // `Rln(Conflict): Cannot estimate fees`. This test passes on
-    // testnet/mainnet — the expected-fail tag makes the report green
-    // here without us pretending the function is broken. We require
-    // the specific APIError display text so that an unrelated failure
-    // (network blip, signer protocol error, …) is still counted as a
-    // real failure.
-    blockedBy: 'regtest-fee',
-    blockedByMatch: 'Cannot estimate fees',
+    // Used to be tagged `regtest-fee` expected-fail because bitcoind
+    // regtest didn't accumulate fee history. Tag dropped on 2026-05-19
+    // after observing regtest stacks that have run for a while DO
+    // produce a usable answer — and the tagged "unexpected-pass" was
+    // misleading. We still tolerate the `Cannot estimate fees` error
+    // path so a freshly-started regtest doesn't fail the suite.
     async run (ctx) {
-      const r = await ctx.ext.estimateFee(6)
-      if (!r || typeof r.fee_rate !== 'number') throw new Error('estimateFee returned no fee_rate')
-      return r
+      try {
+        const r = await ctx.ext.estimateFee(6)
+        if (!r || typeof r.fee_rate !== 'number') throw new Error('estimateFee returned no fee_rate')
+        return r
+      } catch (e) {
+        const msg = String((e as Error).message ?? e)
+        if (msg.includes('Cannot estimate fees')) {
+          return { skipped: true, note: 'regtest has no fee history yet — benign on a freshly started stack' }
+        }
+        throw e
+      }
     }
   },
   {
@@ -396,10 +400,16 @@ export const TEST_CASES: TestCase[] = [
       // half-open, so funding_txid stays null forever (channel stuck
       // in Opening).
       //
-      // We re-issue connectPeer + poll listPeers for up to 30s. If
+      // We re-issue connectPeer + poll listPeers for up to 60s. If
       // peer still not visible, we proceed anyway with a loud note —
       // t31's polling loop has its own reconnect-in-loop fallback.
-      const POLL_MS = 30000
+      //
+      // Bumped 30s → 60s for the Node runner: napi calls are zero-
+      // overhead while RN's HRPC marshalling adds 1-20ms per call, so
+      // RN gets free tokio breathing room that Node doesn't. 60s gives
+      // the noise handshake enough wall-clock on both. (RN runs are
+      // unaffected — pre-flight exits the moment peer is visible.)
+      const POLL_MS = 60000
       const peerDeadline = Date.now() + POLL_MS
       let peerVisible = false
       while (Date.now() < peerDeadline) {
@@ -417,13 +427,32 @@ export const TEST_CASES: TestCase[] = [
       ctx.state[CHANNEL_IDS_BEFORE_BTC_OPEN_KEY] = Array.from(beforeIds)
       // push_msat=100M (100k sat) gives the peer initial outbound to
       // us so they can pay our invoice in t42.
-      const r = await ctx.ext.openChannel({
-        peer_pubkey_and_opt_addr: peer,
-        capacity_sat: 200000,
-        push_msat: 100000000,
-        public: true,
-        with_anchors: true
-      })
+      //
+      // Retry on `Failed to connect to peer`. On Node the noise
+      // handshake can still be mid-flight when openChannel runs — the
+      // daemon's openChannel handler rejects synchronously. Re-issuing
+      // connectPeer + a short wait usually clears it within 1-2 tries
+      // (same retry shape as t100.coopCloseBtc).
+      let r: { temporary_channel_id?: string; channel_id?: string } | undefined
+      let lastOpenErr: string | null = null
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          r = await ctx.ext.openChannel({
+            peer_pubkey_and_opt_addr: peer,
+            capacity_sat: 200000,
+            push_msat: 100000000,
+            public: true,
+            with_anchors: true
+          })
+          break
+        } catch (e) {
+          lastOpenErr = (e as Error).message
+          if (!lastOpenErr.includes('Failed to connect to peer')) throw e
+          await ctx.ext.connectPeer(peer).catch(() => undefined)
+          await sleep(3000)
+        }
+      }
+      if (!r) throw new Error(`openChannel failed after 4 attempts: ${lastOpenErr}`)
       ctx.state[CHANNEL_ID_BTC_TEMP_KEY] = r?.temporary_channel_id
       // DO NOT mine here. The funding tx broadcast is async — t31
       // mines while polling.
@@ -935,14 +964,28 @@ export const TEST_CASES: TestCase[] = [
       // Small capacity — we only need a working channel to close it.
       // Above `channel_capacity_min_sat: 5506` (from nodeinfo) with
       // headroom for anchor reserves. No push — the test doesn't move
-      // funds through this channel.
-      const opened = await ctx.ext.openChannel({
-        peer_pubkey_and_opt_addr: peer,
-        capacity_sat: 80000,
-        push_msat: 0,
-        public: true,
-        with_anchors: true
-      })
+      // funds through this channel. Retry on `Failed to connect to
+      // peer` — same handshake race as t30; see notes there.
+      let opened: { temporary_channel_id?: string; channel_id?: string } | undefined
+      let lastOpenErr: string | null = null
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          opened = await ctx.ext.openChannel({
+            peer_pubkey_and_opt_addr: peer,
+            capacity_sat: 80000,
+            push_msat: 0,
+            public: true,
+            with_anchors: true
+          })
+          break
+        } catch (e) {
+          lastOpenErr = (e as Error).message
+          if (!lastOpenErr.includes('Failed to connect to peer')) throw e
+          await ctx.ext.connectPeer(peer).catch(() => undefined)
+          await sleep(3000)
+        }
+      }
+      if (!opened) throw new Error(`openChannel failed after 4 attempts: ${lastOpenErr}`)
 
       // Wait for the new channel to reach `ready`. Mine + sync each
       // iteration the same way t31 does.
@@ -1032,16 +1075,30 @@ export const TEST_CASES: TestCase[] = [
       await ctx.ext.sync().catch(() => undefined)
 
       // asset_amount = 600 — leaves headroom from the 1000 we received
-      // in t67. Above `channel_asset_min_amount: 1` (nodeinfo).
-      const r = await ctx.ext.openChannel({
-        peer_pubkey_and_opt_addr: peer,
-        capacity_sat: 200000,
-        push_msat: 0,
-        asset_amount: 600,
-        asset_id: assetId,
-        public: true,
-        with_anchors: true
-      })
+      // in t67. Above `channel_asset_min_amount: 1` (nodeinfo). Same
+      // `Failed to connect to peer` retry as t30/t99.
+      let r: { temporary_channel_id?: string; channel_id?: string } | undefined
+      let lastOpenErr: string | null = null
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          r = await ctx.ext.openChannel({
+            peer_pubkey_and_opt_addr: peer,
+            capacity_sat: 200000,
+            push_msat: 0,
+            asset_amount: 600,
+            asset_id: assetId,
+            public: true,
+            with_anchors: true
+          })
+          break
+        } catch (e) {
+          lastOpenErr = (e as Error).message
+          if (!lastOpenErr.includes('Failed to connect to peer')) throw e
+          await ctx.ext.connectPeer(peer).catch(() => undefined)
+          await sleep(3000)
+        }
+      }
+      if (!r) throw new Error(`openChannel(asset) failed after 4 attempts: ${lastOpenErr}`)
       return r
     }
   },
