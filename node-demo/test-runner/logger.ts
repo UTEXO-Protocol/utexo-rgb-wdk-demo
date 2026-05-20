@@ -41,12 +41,13 @@ export function logEvent (
   }
 }
 
-// Stub matching the RN LogStore export shape so callers that read
-// `logStore.snapshot()` etc. don't crash. We don't retain history.
-// Session id generated at module load. Used by TestRunner to embed a
-// stable identifier in the report so concurrent runs can be told apart.
+// Session id generated at module load; TestRunner embeds it in the
+// report so concurrent runs can be told apart.
 const SESSION_ID = `node-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`
 
+// Stub matching the RN LogStore shape so the shared TestRunner ports
+// unchanged. We don't retain history on Node — terminal output is the
+// stream.
 export const logStore = {
   snapshot: () => [] as unknown[],
   subscribe: (_: unknown) => () => undefined,

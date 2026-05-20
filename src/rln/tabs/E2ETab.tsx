@@ -42,7 +42,10 @@ export function E2ETab ({ ext }: { ext: LnExt | null }): React.ReactElement {
   const [btcRpcUser, setBtcRpcUser] = React.useState('user')
   const [btcRpcPass, setBtcRpcPass] = React.useState('password')
   const [peerHostForLn, setPeerHostForLn] = React.useState(HOST_LOOPBACK)
-  const [peerLnPort, setPeerLnPort] = React.useState('9735')
+  // 9736 matches the local regtest peer launched with
+  // `--ldk-peer-listening-port 9736`. Override in the UI if your peer
+  // is on a different port.
+  const [peerLnPort, setPeerLnPort] = React.useState('9736')
 
   // ── Runner state ──
   const runnerRef = React.useRef<TestRunner | null>(null)

@@ -16,7 +16,7 @@
 //   BITCOIND_HOST, BITCOIND_PORT, BITCOIND_USER, BITCOIND_PASS
 //   PEER_BASE_URL                 # http://127.0.0.1:3002
 //   PEER_HOST_FOR_LN              # 127.0.0.1
-//   PEER_LN_PORT                  # 9735
+//   PEER_LN_PORT                  # 9736
 //   INDEXER_URL                   # tcp://127.0.0.1:50001
 //   PROXY_ENDPOINT                # rpc://127.0.0.1:3001/json-rpc
 //   E2E_CATEGORY                  # comma-separated filter; default = all
