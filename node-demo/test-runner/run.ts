@@ -53,7 +53,11 @@ const ENV = {
   proxyEndpoint: process.env.PROXY_ENDPOINT ?? 'rpc://127.0.0.1:3001/json-rpc',
   peerBaseUrl: process.env.PEER_BASE_URL ?? 'http://127.0.0.1:3002',
   peerHostForLn: process.env.PEER_HOST_FOR_LN ?? '127.0.0.1',
-  peerLnPort: process.env.PEER_LN_PORT ?? '9735',
+  // 9736 matches the local regtest peer launched with
+  // `--ldk-peer-listening-port 9736` (default LDK port 9735 is left for
+  // any concurrently-running mainline node). iOS users override this in
+  // the E2ETab UI; on Node we have no UI so the default has to be right.
+  peerLnPort: process.env.PEER_LN_PORT ?? '9736',
   categoryFilter: process.env.E2E_CATEGORY
 }
 
