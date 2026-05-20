@@ -15,7 +15,7 @@
     "@tetherto/wdk-wallet": "^1.0.0-beta.7",
     "@tetherto/wdk-wallet-btc": "^1.0.0-beta.8",
     "@utexo/rgb-lightning-node-bare": "github:UTEXO-Protocol/rgb-lightning-node-bare#v0.1.0-beta.4",
-    "@utexo/wdk-rgb-lightning": "github:UTEXO-Protocol/wdk-rgb-lightning#v0.1.0-alpha.0",
+    "@utexo/wdk-rgb-lightning": "github:UTEXO-Protocol/wdk-rgb-lightning#v0.1.0-alpha.2",
     "@utexo/wdk-wallet-rgb": "github:UTEXO-Protocol/wdk-wallet-rgb#ead3ae4",
     "expo": "~54.0.33",
     "expo-build-properties": "~1.0.10",
