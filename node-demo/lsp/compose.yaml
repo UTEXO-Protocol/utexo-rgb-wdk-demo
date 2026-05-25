@@ -1,0 +1,96 @@
+# Spins up utexo-lsp (Go HTTP service) pointed at the peer RLN that
+# regtest.sh already brings up at 127.0.0.1:3002. The LSP listens on
+# :8080 inside the container, mapped to :8080 on the host so the E2E
+# runner can hit it as `LSP_BASE_URL=http://127.0.0.1:8080`.
+#
+# Usage:
+#   ./node-demo/lsp/up.sh        # clones utexo-lsp on first run, then up -d
+#   ./node-demo/lsp/down.sh
+#
+# Or manually:
+#   LSP_REPO_PATH=/path/to/utexo-lsp docker compose -f node-demo/lsp/compose.yaml up -d
+
+services:
+  utexo-lsp:
+    image: utexo-lsp:local
+    build:
+      # up.sh stages Dockerfile.local into the LSP source tree (our
+      # cgo-enabled override of upstream's Dockerfile, which builds
+      # CGO_ENABLED=0 and breaks go-sqlite3 at runtime).
+      context: ${LSP_REPO_PATH:-../../.data/lsp-src}
+      dockerfile: Dockerfile.local
+    container_name: utexo-lsp-demo
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_ADDR: ":8080"
+      DATABASE_DRIVER: "sqlite"
+      DATABASE_URL: "/data/utexo_lsp.db"
+
+      # Both LSP and RGB sides talk to the same peer RLN at 3002.
+      # host.docker.internal resolves to the Mac/WSL host inside the
+      # container; on Linux this works in Docker Desktop 4.18+ or with
+      # an explicit `extra_hosts` entry below.
+      LSP_BASE_URL: "http://host.docker.internal:3002"
+      RGB_NODE_BASE_URL: "http://host.docker.internal:3002"
+      LSP_TOKEN: ""
+
+      HTTP_TIMEOUT: "15s"
+      CRON_EVERY: "10s"
+
+      # Bridge policy — keep generous in regtest so the test runner
+      # doesn't trip min-amount filters.
+      MIN_AMT_MSAT: "1000"
+      MIN_CONFIRMATIONS: "1"
+      EXPIRY_MATCH_TOLERANCE_SEC: "30"
+      SENDRGB_FEE_RATE: "1"
+
+      # Lightning Address policy. URL must be the host:port the wallet
+      # uses to reach the LSP (i.e. the *host* perspective, not the
+      # container).
+      LIGHTNING_ADDRESS_DOMAIN_URL: "http://127.0.0.1:8080"
+      LIGHTNING_ADDRESS_SHORT_DESCRIPTION: "node-demo LSP"
+      LIGHTNING_ADDRESS_MIN_SENDABLE_MSAT: "1000"
+      LIGHTNING_ADDRESS_MAX_SENDABLE_MSAT: "100000000"
+
+      # APay (async-payments) gate. Wallets in v1 don't need APay, but
+      # the LSP still enforces the bearer token if it's set — leave
+      # blank to keep the /internal/* endpoints disabled.
+      APAY_BEARER_TOKEN: ""
+
+      # IMPORTANT: an empty allowlist BLOCKS all asset-bound flows in
+      # this LSP version (see api.go ensureAssetSupported). For the
+      # bridge endpoints (/onchain_send, /lightning_receive) to work,
+      # set this to a comma-separated list of asset_ids you intend to
+      # exercise. Plain LNURL-pay and /get_info don't depend on it.
+      SUPPORTED_ASSET_IDS: "${LSP_SUPPORTED_ASSET_IDS:-}"
+
+      # Disable UTXO maintenance — the test runner manages utxos
+      # itself via the peer's createutxos calls.
+      UTXO_MIN_COUNT: "0"
+      UTXO_TARGET_COUNT: "0"
+
+      DEFAULT_CHANNEL_CAPACITY_SAT: "200000"
+      DEFAULT_CHANNEL_ASSET_AMOUNT: "1"
+      DEFAULT_CHANNEL_PUSH_MSAT: "0"
+
+    extra_hosts:
+      # Linux fallback — Docker Desktop on macOS/Windows resolves this
+      # automatically, but plain docker on Linux needs an explicit
+      # entry. `host-gateway` is recognised by Docker ≥20.10.
+      - "host.docker.internal:host-gateway"
+
+    volumes:
+      - lsp_data:/data
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  lsp_data:

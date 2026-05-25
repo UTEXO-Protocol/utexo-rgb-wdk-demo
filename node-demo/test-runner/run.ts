@@ -58,6 +58,11 @@ const ENV = {
   // any concurrently-running mainline node). iOS users override this in
   // the E2ETab UI; on Node we have no UI so the default has to be right.
   peerLnPort: process.env.PEER_LN_PORT ?? '9736',
+  // Optional LSP integration target. When unset the LSP suite (t109+)
+  // fails fast on the probe case, which cascades to skips for the rest
+  // — matches the "non-LSP" environment cleanly. Set
+  // LSP_BASE_URL=http://127.0.0.1:8080 (or use ./lsp/up.sh) to enable.
+  lspBaseUrl: process.env.LSP_BASE_URL ?? '',
   categoryFilter: process.env.E2E_CATEGORY
 }
 
@@ -124,7 +129,8 @@ async function main (): Promise<void> {
     'env.peer_host': ENV.peerHostForLn,
     'env.peer_ln_port': ENV.peerLnPort,
     'env.indexer_url': ENV.indexerUrl,
-    'env.proxy_endpoint': ENV.proxyEndpoint
+    'env.proxy_endpoint': ENV.proxyEndpoint,
+    'env.lsp_base_url': ENV.lspBaseUrl
   }
 
   const runner = new TestRunner(TEST_CASES, { ext, peer, chain, initialState })
