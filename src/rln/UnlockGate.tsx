@@ -1,20 +1,27 @@
 // UnlockGate — pre-tab screen that drives the one-time `ext.unlock()` call.
 //
 // Defaults match `rgb-lightning-node/regtest.sh start` (compose.yaml in
-// that repo, with rgb-proxy on 3001 to avoid the demo's dev-server
-// collision). Once unlock succeeds, the gate flips and the tabbed UI
+// that repo). Once unlock succeeds, the gate flips and the tabbed UI
 // becomes the active surface.
+//
+// Port history: we briefly moved rgb-proxy to 3001 to dodge Expo's
+// dev-server on 3000, but that commit (06504e0 on the upstream RLN
+// fork) was dropped from PR #40 — the canonical regtest compose now
+// exposes proxy on 3000 again. If Expo's dev server collides, run
+// expo on a non-default port instead (`npx expo start --port 8081`).
 
 import React from 'react'
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import type { LnExt } from './ext/LnExt'
 import { logEvent } from './state/LogStore'
 import { colors } from './components/colors'
+import { DEFAULT_NETWORK, HOST_LOOPBACK, getNetworkDefaults } from './networks'
 
-// Android emulator's `localhost`/127.0.0.1 is the emulator itself, NOT
-// the host. The host-machine alias from inside the AVD is `10.0.2.2`.
-// iOS sim shares the host's loopback so 127.0.0.1 works there.
-const HOST_LOOPBACK = Platform.OS === 'android' ? '10.0.2.2' : '127.0.0.1'
+// Defaults sourced from ./networks.ts so a future network switch
+// (regtest ↔ signet) is a single-line change and all UI screens stay
+// in sync. The Platform-aware HOST_LOOPBACK lives there too — see
+// the docstring in networks.ts for the iOS-sim / Android-emu rules.
+const DEFAULTS = getNetworkDefaults(DEFAULT_NETWORK)
 
 interface Props {
   ext: LnExt | null
@@ -23,12 +30,12 @@ interface Props {
 }
 
 export function UnlockGate ({ ext, ready, onUnlocked }: Props): React.ReactElement {
-  const [bitcoindHost, setBitcoindHost] = React.useState(HOST_LOOPBACK)
-  const [bitcoindPort, setBitcoindPort] = React.useState('18443')
-  const [bitcoindUser, setBitcoindUser] = React.useState('user')
-  const [bitcoindPass, setBitcoindPass] = React.useState('password')
-  const [indexerUrl, setIndexerUrl] = React.useState(`tcp://${HOST_LOOPBACK}:50001`)
-  const [proxyEndpoint, setProxyEndpoint] = React.useState(`rpc://${HOST_LOOPBACK}:3001/json-rpc`)
+  const [bitcoindHost, setBitcoindHost] = React.useState(DEFAULTS.bitcoind.host || HOST_LOOPBACK)
+  const [bitcoindPort, setBitcoindPort] = React.useState(String(DEFAULTS.bitcoind.port))
+  const [bitcoindUser, setBitcoindUser] = React.useState(DEFAULTS.bitcoind.user)
+  const [bitcoindPass, setBitcoindPass] = React.useState(DEFAULTS.bitcoind.password)
+  const [indexerUrl, setIndexerUrl] = React.useState(DEFAULTS.indexerUrl)
+  const [proxyEndpoint, setProxyEndpoint] = React.useState(DEFAULTS.proxyEndpoint)
   const [announceAlias, setAnnounceAlias] = React.useState('wdk-demo')
   const [busy, setBusy] = React.useState(false)
   const [err, setErr] = React.useState<string | null>(null)

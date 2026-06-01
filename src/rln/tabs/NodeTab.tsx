@@ -6,6 +6,12 @@ import type { LnExt } from '../ext/LnExt'
 import type { MethodSpec } from '../state/types'
 import { MethodCard } from '../components/MethodCard'
 import { colors } from '../components/colors'
+import { DEFAULT_NETWORK, getNetworkDefaults } from '../networks'
+
+// Per-field defaults sourced from networks.ts — keep this tab in
+// lockstep with UnlockGate / E2ETab so a regtest ↔ signet flip
+// propagates uniformly.
+const DEFAULTS = getNetworkDefaults(DEFAULT_NETWORK)
 
 const SPECS: MethodSpec[] = [
   {
@@ -50,7 +56,7 @@ const SPECS: MethodSpec[] = [
     description: 'Validate that an electrum-style indexer URL is reachable and well-formed.',
     extMethod: 'checkIndexerUrl',
     category: 'node',
-    fields: [{ name: 'url', type: 'string', required: true, label: 'indexer url', default: 'tcp://127.0.0.1:50001' }],
+    fields: [{ name: 'url', type: 'string', required: true, label: 'indexer url', default: DEFAULTS.indexerUrl }],
     buildArgs: (v) => [String(v.url ?? '')]
   },
   {
@@ -59,7 +65,7 @@ const SPECS: MethodSpec[] = [
     description: 'Validate that an rgb-proxy JSON-RPC endpoint is reachable.',
     extMethod: 'checkProxyEndpoint',
     category: 'node',
-    fields: [{ name: 'endpoint', type: 'string', required: true, label: 'proxy endpoint', default: 'rpc://127.0.0.1:3001/json-rpc' }],
+    fields: [{ name: 'endpoint', type: 'string', required: true, label: 'proxy endpoint', default: DEFAULTS.proxyEndpoint }],
     buildArgs: (v) => [String(v.endpoint ?? '')]
   },
   {

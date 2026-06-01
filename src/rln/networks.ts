@@ -39,8 +39,12 @@ export interface NetworkDefaults {
  *   iOS sim   → 127.0.0.1 (shared kernel)
  *   Android emu → 10.0.2.2 (NAT alias for the host)
  * Real devices need the LAN IP.
+ *
+ * Exported so other UI files (UnlockGate, E2ETab, NodeTab,
+ * RgbLightningScreen, RgbScreen) can use one source of truth
+ * rather than re-declaring the Platform check inline.
  */
-const HOST_LOOPBACK: string = Platform?.OS === 'android' ? '10.0.2.2' : '127.0.0.1'
+export const HOST_LOOPBACK: string = Platform?.OS === 'android' ? '10.0.2.2' : '127.0.0.1'
 
 /**
  * Regtest defaults — match the rgb-lightning-node `regtest.sh start`

@@ -36,7 +36,23 @@ services:
       LSP_TOKEN: ""
 
       HTTP_TIMEOUT: "15s"
-      CRON_EVERY: "10s"
+
+      # ⚠ DEMO ONLY — DO NOT COPY VERBATIM TO PRODUCTION ⚠
+      #
+      # CRON_EVERY drives reconcileChannels (auto-openchannel for
+      # connected peers) + UTXO maintenance + transfer monitoring.
+      # We deliberately push it to 24h here so the cron doesn't
+      # fire during a test run — the auto-openchannel otherwise
+      # wedges the peer's openchannel semaphore if the device-side
+      # LDK handshake takes a moment to settle (the t22 cosmetic
+      # race documented in test-runner/testCases.ts).
+      #
+      # PRODUCTION deployments MUST use a tight value (utexo-lsp's
+      # default is 30s — that's what the upstream README recommends).
+      # Leaving this at 24h in production stops async-payment hash
+      # refills + stranded-transfer GC, which leads to bad UX and
+      # stuck balances over weeks.
+      CRON_EVERY: "24h"
 
       # Bridge policy — keep generous in regtest so the test runner
       # doesn't trip min-amount filters.

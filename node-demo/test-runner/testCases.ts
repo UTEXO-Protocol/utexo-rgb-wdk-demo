@@ -1575,7 +1575,7 @@ export const TEST_CASES: TestCase[] = [
       if (typeof info?.pubkey !== 'string' || info.pubkey.length === 0) {
         throw new Error(`LSP /get_info missing pubkey: ${JSON.stringify(info)}`)
       }
-      const resp = await (ctx.ext as unknown as { apayNew: (id: string) => Promise<Record<string, unknown>> }).apayNew(info.pubkey)
+      const resp = await ctx.ext.apayNew(info.pubkey)
       if (!resp || typeof resp !== 'object') {
         throw new Error(`apayNew returned non-object: ${JSON.stringify(resp)}`)
       }
@@ -1634,9 +1634,7 @@ export const TEST_CASES: TestCase[] = [
       if (typeof info?.pubkey !== 'string') {
         throw new Error(`LSP /get_info missing pubkey: ${JSON.stringify(info)}`)
       }
-      const result = await (ctx.ext as unknown as {
-        bootstrapLsp: (opts: { peerPubkeyAndAddr: string, hostNodeId?: string, waitForPeerMs?: number, pollIntervalMs?: number }) => Promise<{ connect: unknown, peerVisible: boolean, apay?: Record<string, unknown> }>
-      }).bootstrapLsp({
+      const result = await ctx.ext.bootstrapLsp({
         peerPubkeyAndAddr: `${info.pubkey}@${peerHost}:${peerLnPort}`,
         hostNodeId: info.pubkey,
         waitForPeerMs: 30000,
@@ -1686,9 +1684,7 @@ export const TEST_CASES: TestCase[] = [
       if (typeof lnInvoice !== 'string') {
         throw new Error('t40.createInvoice did not stash an invoice in ctx.state.invoice.last')
       }
-      const result = await (ctx.ext as unknown as {
-        requestLspRgbDeposit: (args: { lsp: string, lnInvoice: string, rgb: Record<string, unknown> }) => Promise<{ lnInvoice: string, rgbInvoice: string, mappingId: number }>
-      }).requestLspRgbDeposit({
+      const result = await ctx.ext.requestLspRgbDeposit({
         lsp: baseUrl,
         lnInvoice,
         rgb: {
@@ -1736,9 +1732,7 @@ export const TEST_CASES: TestCase[] = [
       if (typeof recv?.invoice !== 'string') {
         throw new Error(`createRgbInvoice returned nothing: ${JSON.stringify(recv)}`)
       }
-      const result = await (ctx.ext as unknown as {
-        payRgbViaLsp: (args: { lsp: string, rgbInvoice: string, ln: Record<string, unknown> }) => Promise<{ lnInvoice: string, sendResult: unknown }>
-      }).payRgbViaLsp({
+      const result = await ctx.ext.payRgbViaLsp({
         lsp: baseUrl,
         rgbInvoice: recv.invoice,
         ln: { amtMsat: 3000000, expirySec: 600, assetId, assetAmount: 1 }

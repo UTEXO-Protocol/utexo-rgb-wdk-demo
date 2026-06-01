@@ -20,6 +20,96 @@ export type LnExt = {
   }>
   shutdown: () => Promise<{ ok: true }>
 
+  // ─────────────────────── VSS recovery ───────────────────────
+  /**
+   * Forcibly take over a stale VSS ownership fence after the previous
+   * node died holding it. Authenticates with the wallet password.
+   * Throws Rln(FailedVssInit) if VSS isn't configured. Pointing two
+   * live nodes at the same VSS store corrupts state — only call this
+   * when you're certain the previous owner is gone.
+   */
+  clearVssFence: (password: string) => Promise<{ ok: true }>
+
+  // ─────────────────────── APay + LSP ───────────────────────
+  /**
+   * Receiver-side async-payments registration with an LSP. Returns
+   * the upstream AsyncOrderNewResponse (PR #51 — host_node_id,
+   * request_id, order_id, status, accepted_through_index,
+   * next_index_expected, unused_hashes, refill_batch_size,
+   * first_hash_index).
+   */
+  apayNew: (hostNodeId: string) => Promise<{
+    request_id?: string
+    host_node_id?: string
+    protocol_version?: string
+    order_id?: string | number
+    status?: string
+    accepted_through_index?: number
+    next_index_expected?: number
+    unused_hashes?: number
+    refill_batch_size?: number
+    first_hash_index?: number
+  }>
+
+  /**
+   * One-shot LSP bootstrap. connectPeer + wait-listPeers-visible +
+   * optional apayNew. See WalletAccountRgbLightning.bootstrapLsp for
+   * the full semantics.
+   */
+  bootstrapLsp: (opts: {
+    peerPubkeyAndAddr: string
+    hostNodeId?: string
+    waitForPeerMs?: number
+    pollIntervalMs?: number
+  }) => Promise<{
+    connect: unknown
+    peerVisible: boolean
+    apay?: {
+      request_id?: string
+      order_id?: string | number
+      status?: string
+      accepted_through_index?: number
+      [k: string]: unknown
+    }
+  }>
+
+  /** Pay a Lightning Address (LUD-06) via the wallet's own RLN node. */
+  payLightningAddress: (
+    addr: string,
+    amountMsat: number | bigint | string,
+    opts?: Record<string, unknown>
+  ) => Promise<{
+    invoice: string
+    sendResult: unknown
+    discovery: Record<string, unknown>
+    callbackUrl: string
+  }>
+
+  /**
+   * Ask the LSP to fulfil an RGB deposit by paying a BOLT11 invoice
+   * the caller supplies; LSP returns an RGB invoice the sender then
+   * pays. Caller monitors completion via its own RLN node.
+   */
+  requestLspRgbDeposit: (args: {
+    lsp: string
+    lnInvoice?: string
+    lnInvoiceRequest?: Record<string, unknown>
+    rgb: Record<string, unknown>
+    lspOpts?: Record<string, unknown>
+  }) => Promise<{ lnInvoice: string, rgbInvoice: string, mappingId: number }>
+
+  /**
+   * Pay an RGB invoice via the LSP-mediated bridge: LSP issues a
+   * BOLT11 for the caller to pay; once paid, LSP runs sendrgb to
+   * the RGB invoice's recipient.
+   */
+  payRgbViaLsp: (args: {
+    lsp: string
+    rgbInvoice: string
+    ln: Record<string, unknown>
+    lspOpts?: Record<string, unknown>
+  }) => Promise<{ lnInvoice: string, rgbInvoice: string, mappingId: number, sendResult: unknown }>
+
   // ─────────────────────── Node info / network ───────────────────────
   getNodeInfo: () => Promise<{
     pubkey?: string

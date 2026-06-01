@@ -18,6 +18,7 @@ import {
   Send, Shield, Wallet, Zap
 } from 'lucide-react-native'
 import { useAccount } from '@tetherto/wdk-react-native-core'
+import { logEvent } from './rln/state/LogStore'
 
 // Palette (matches starter-app/src/constants/colors.ts)
 const colors = {
@@ -270,9 +271,13 @@ export function RgbScreen({ mnemonicToBackup }: { mnemonicToBackup: string | nul
       })
       try {
         await fn()
-      } catch (err: any) {
-        console.log(`[RGB] ${key} error:`, err?.message || err)
-        setSectionResults(prev => ({ ...prev, [section]: { error: err?.message || String(err) } }))
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        // Route into the project LogStore so the error shows up in the
+        // bottom LogDrawer with the rest of the diagnostics — the old
+        // console.log only surfaced in Metro and was invisible to QA.
+        logEvent('error', 'rgb', key, msg)
+        setSectionResults(prev => ({ ...prev, [section]: { error: msg } }))
       } finally {
         setLoading(null)
       }

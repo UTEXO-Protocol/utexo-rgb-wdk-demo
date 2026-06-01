@@ -14,7 +14,7 @@
 // app document dir for off-device pull (adb / simctl).
 
 import React from 'react'
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import * as Clipboard from 'expo-clipboard'
 import { Paths, File } from 'expo-file-system'
 import type { LnExt } from '../ext/LnExt'
@@ -25,8 +25,11 @@ import { TEST_CASES } from '../testing/testCases'
 import type { RunnerSnapshot, TestStatus } from '../testing/types'
 import { logEvent, logStore } from '../state/LogStore'
 import { colors } from '../components/colors'
+import { DEFAULT_NETWORK, HOST_LOOPBACK, getNetworkDefaults } from '../networks'
 
-const HOST_LOOPBACK = Platform.OS === 'android' ? '10.0.2.2' : '127.0.0.1'
+// Defaults sourced from networks.ts — single source of truth shared
+// with UnlockGate / RgbLightningScreen / NodeTab.
+const DEFAULTS = getNetworkDefaults(DEFAULT_NETWORK)
 
 const CATEGORIES = Array.from(new Set(TEST_CASES.map((c) => c.category)))
 
@@ -36,16 +39,20 @@ export function E2ETab ({ ext }: { ext: LnExt | null }): React.ReactElement {
   // where the standalone peer daemon is launched with
   // `--daemon-listening-port 3002` (3001 is occupied by the RGB proxy
   // running in Docker, which uses /json-rpc — different transport).
-  const [peerBaseUrl, setPeerBaseUrl] = React.useState(`http://${HOST_LOOPBACK}:3002`)
-  const [btcRpcHost, setBtcRpcHost] = React.useState(HOST_LOOPBACK)
-  const [btcRpcPort, setBtcRpcPort] = React.useState('18443')
-  const [btcRpcUser, setBtcRpcUser] = React.useState('user')
-  const [btcRpcPass, setBtcRpcPass] = React.useState('password')
-  const [peerHostForLn, setPeerHostForLn] = React.useState(HOST_LOOPBACK)
+  const [peerBaseUrl, setPeerBaseUrl] = React.useState(DEFAULTS.peerBaseUrl)
+  const [btcRpcHost, setBtcRpcHost] = React.useState(DEFAULTS.bitcoind.host || HOST_LOOPBACK)
+  const [btcRpcPort, setBtcRpcPort] = React.useState(String(DEFAULTS.bitcoind.port))
+  const [btcRpcUser, setBtcRpcUser] = React.useState(DEFAULTS.bitcoind.user)
+  const [btcRpcPass, setBtcRpcPass] = React.useState(DEFAULTS.bitcoind.password)
+  const [peerHostForLn, setPeerHostForLn] = React.useState(DEFAULTS.peerHostForLn)
   // 9736 matches the local regtest peer launched with
   // `--ldk-peer-listening-port 9736`. Override in the UI if your peer
-  // is on a different port.
-  const [peerLnPort, setPeerLnPort] = React.useState('9736')
+  // is on a different port. Signet uses the standard 9735.
+  const [peerLnPort, setPeerLnPort] = React.useState(DEFAULTS.peerLnPort)
+  // Optional LSP base URL. When empty, t109 fails fast and the LSP
+  // category (t109–t116) cascades to skip. Default points at the
+  // local utexo-lsp brought up by node-demo/lsp/up.sh.
+  const [lspBaseUrl, setLspBaseUrl] = React.useState(DEFAULTS.lspBaseUrl)
 
   // ── Runner state ──
   const runnerRef = React.useRef<TestRunner | null>(null)
@@ -76,14 +83,15 @@ export function E2ETab ({ ext }: { ext: LnExt | null }): React.ReactElement {
     const initialState: Record<string, unknown> = {
       'env.peer_host': peerHostForLn,
       'env.peer_ln_port': peerLnPort,
-      'env.indexer_url': `tcp://${HOST_LOOPBACK}:50001`,
-      'env.proxy_endpoint': `rpc://${HOST_LOOPBACK}:3001/json-rpc`
+      'env.indexer_url': DEFAULTS.indexerUrl,
+      'env.proxy_endpoint': DEFAULTS.proxyEndpoint,
+      'env.lsp_base_url': lspBaseUrl.trim()
     }
     const runner = new TestRunner(TEST_CASES, { ext, peer, chain, initialState })
     runnerRef.current = runner
     runner.subscribe(() => setSnap(runner.snapshot()))
     return runner
-  }, [ext, btcRpcHost, btcRpcPort, btcRpcUser, btcRpcPass, peerBaseUrl, peerHostForLn, peerLnPort])
+  }, [ext, btcRpcHost, btcRpcPort, btcRpcUser, btcRpcPass, peerBaseUrl, peerHostForLn, peerLnPort, lspBaseUrl])
 
   const onRunAll = React.useCallback(async () => {
     if (snap.status === 'running') return
@@ -166,6 +174,10 @@ export function E2ETab ({ ext }: { ext: LnExt | null }): React.ReactElement {
         <Row><Label>base url</Label><TextInput style={styles.input} value={peerBaseUrl} onChangeText={setPeerBaseUrl} autoCapitalize="none" /></Row>
         <Row><Label>LN host</Label><TextInput style={styles.input} value={peerHostForLn} onChangeText={setPeerHostForLn} autoCapitalize="none" /></Row>
         <Row><Label>LN port</Label><TextInput style={styles.input} value={peerLnPort} onChangeText={setPeerLnPort} keyboardType="numeric" /></Row>
+      </Group>
+
+      <Group title="LSP (utexo-lsp, optional — t109+ skip if empty)">
+        <Row><Label>base url</Label><TextInput style={styles.input} value={lspBaseUrl} onChangeText={setLspBaseUrl} autoCapitalize="none" /></Row>
       </Group>
 
       <Group title="bitcoind RPC (chain controller)">

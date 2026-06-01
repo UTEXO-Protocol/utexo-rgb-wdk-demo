@@ -14,16 +14,16 @@
 //      LN operation works.
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  ActivityIndicator, Alert, Platform, ScrollView,
+  ActivityIndicator, Alert, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View
 } from 'react-native'
 import * as Clipboard from 'expo-clipboard'
 import { useAccount } from '@tetherto/wdk-react-native-core'
+import { DEFAULT_NETWORK, HOST_LOOPBACK, getNetworkDefaults } from './rln/networks'
 
-// Android emulator's `localhost`/127.0.0.1 is the emulator itself, NOT the
-// host. The host-machine alias from inside the AVD is `10.0.2.2`. iOS sim
-// shares the host's loopback so 127.0.0.1 works there.
-const HOST_LOOPBACK = Platform.OS === 'android' ? '10.0.2.2' : '127.0.0.1'
+// Defaults sourced from networks.ts — see UnlockGate / E2ETab for the
+// same pattern. Single source of truth for per-network endpoint sets.
+const DEFAULTS = getNetworkDefaults(DEFAULT_NETWORK)
 
 // Mirror of WalletAccountRgbLightning.PENDING_ADDRESS — kept verbatim
 // here so the screen can detect it before the node is unlocked.
@@ -137,16 +137,15 @@ export function RgbLightningScreen () {
   // in a ref so the Refresh button doesn't try to unlock twice.
   const unlockedRef = useRef(false)
   const [unlocked, setUnlocked] = useState(false)
-  // Defaults match the regtest stack started by
-  // `rgb-lightning-node/regtest.sh start` (compose.yaml in that repo,
-  // with rgb-proxy moved off port 3000 to 3001 to avoid the demo's
-  // dev-server collision).
-  const [bitcoindHost, setBitcoindHost] = useState(HOST_LOOPBACK)
-  const [bitcoindPort, setBitcoindPort] = useState('18443')
-  const [bitcoindUser, setBitcoindUser] = useState('user')
-  const [bitcoindPass, setBitcoindPass] = useState('password')
-  const [indexerUrl, setIndexerUrl] = useState(`tcp://${HOST_LOOPBACK}:50001`)
-  const [proxyEndpoint, setProxyEndpoint] = useState(`rpc://${HOST_LOOPBACK}:3001/json-rpc`)
+  // Defaults pulled from networks.ts (see DEFAULT_NETWORK + the
+  // regtest/signet presets). Override any field via the UI — these
+  // are just the initial values.
+  const [bitcoindHost, setBitcoindHost] = useState(DEFAULTS.bitcoind.host || HOST_LOOPBACK)
+  const [bitcoindPort, setBitcoindPort] = useState(String(DEFAULTS.bitcoind.port))
+  const [bitcoindUser, setBitcoindUser] = useState(DEFAULTS.bitcoind.user)
+  const [bitcoindPass, setBitcoindPass] = useState(DEFAULTS.bitcoind.password)
+  const [indexerUrl, setIndexerUrl] = useState(DEFAULTS.indexerUrl)
+  const [proxyEndpoint, setProxyEndpoint] = useState(DEFAULTS.proxyEndpoint)
 
   // ─── Node state ───────────────────────────────────────────────────────
   const [nodeInfo, setNodeInfo] = useState<Awaited<ReturnType<LnExt['getNodeInfo']>> | null>(null)
