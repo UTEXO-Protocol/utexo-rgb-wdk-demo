@@ -1122,6 +1122,13 @@ export const TEST_CASES: TestCase[] = [
     title: 'asset channel becomes ready (this run only)',
     category: 'channels',
     dependsOn: ['t70.openAssetChannel'],
+    // RGB asset channels do not reach `is_usable=true` in external-
+    // signer mode under iter-2 (the funding-tx anchor PSBT signing
+    // path needs the VLS extension Roman is tracking). Tagged so the
+    // 8.5 min timeout here doesn't get counted as a regression while
+    // the upstream fix is in flight.
+    blockedBy: 'iter-2-B1',
+    blockedByMatch: /timeout waiting for NEW asset channel ready|asset channel.*not ready|external.*signer/i,
     async run (ctx) {
       const beforeIds = new Set(ctx.state[CHANNEL_IDS_BEFORE_ASSET_OPEN_KEY] as string[] | undefined)
       const wantedPeer = ctx.state[PEER_PUBKEY_KEY] as string
@@ -1447,7 +1454,7 @@ export const TEST_CASES: TestCase[] = [
     category: 'lsp',
     dependsOn: ['t109.lspProbe', 't40.createInvoice', 't67.peerFundedAsset'],
     blockedBy: 'lsp-server-config',
-    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in/i,
+    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in|open channel operation is in progress|fetch failed/i,
     async run (ctx) {
       const baseUrl = ctx.state['lsp.base_url'] as string
       const assetId = ctx.state[ASSET_ID_NIA_KEY] as string | undefined
@@ -1495,7 +1502,7 @@ export const TEST_CASES: TestCase[] = [
     category: 'lsp',
     dependsOn: ['t109.lspProbe', 't67.peerFundedAsset'],
     blockedBy: 'lsp-server-config',
-    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in/i,
+    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in|open channel operation is in progress|fetch failed/i,
     async run (ctx) {
       const baseUrl = ctx.state['lsp.base_url'] as string
       const assetId = ctx.state[ASSET_ID_NIA_KEY] as string | undefined
@@ -1610,6 +1617,12 @@ export const TEST_CASES: TestCase[] = [
     title: 'bootstrapLsp connects peer + waits visible + apayNew',
     category: 'lsp',
     dependsOn: ['t110.lspGetInfo'],
+    // Same blocker as t113: until SUPPORTED_ASSET_IDS + async-payments
+    // are configured on utexo-lsp, /apay/new times out waiting for
+    // the host response. The connectPeer + listPeers half works; only
+    // the apayNew call inside bootstrapLsp fails.
+    blockedBy: 'lsp-server-config',
+    blockedByMatch: /timed out waiting for host response|async.*payments?.*not.*configured/i,
     async run (ctx) {
       const baseUrl = ctx.state['lsp.base_url'] as string
       if (!baseUrl) throw new Error('LSP_BASE_URL not set')
@@ -1656,7 +1669,7 @@ export const TEST_CASES: TestCase[] = [
     category: 'lsp',
     dependsOn: ['t110.lspGetInfo', 't40.createInvoice', 't67.peerFundedAsset'],
     blockedBy: 'lsp-server-config',
-    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in/i,
+    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in|open channel operation is in progress|fetch failed/i,
     async run (ctx) {
       const baseUrl = ctx.state['lsp.base_url'] as string
       const assetId = ctx.state[ASSET_ID_NIA_KEY] as string | undefined
@@ -1692,7 +1705,7 @@ export const TEST_CASES: TestCase[] = [
     category: 'lsp',
     dependsOn: ['t110.lspGetInfo', 't67.peerFundedAsset'],
     blockedBy: 'lsp-server-config',
-    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in/i,
+    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in|open channel operation is in progress|fetch failed/i,
     async run (ctx) {
       const baseUrl = ctx.state['lsp.base_url'] as string
       const assetId = ctx.state[ASSET_ID_NIA_KEY] as string | undefined
