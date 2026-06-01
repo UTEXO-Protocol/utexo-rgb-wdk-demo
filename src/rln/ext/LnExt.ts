@@ -29,6 +29,12 @@ export type LnExt = {
    * when you're certain the previous owner is gone.
    */
   clearVssFence: (password: string) => Promise<{ ok: true }>
+  /**
+   * Force an immediate VSS backup flush. Returns the snapshot version
+   * just persisted. Throws if VSS isn't configured / the flush fails.
+   * Useful for app-controlled checkpoints (background-app fsync).
+   */
+  vssBackup: () => Promise<{ version: number }>
 
   // ─────────────────────── APay + LSP ───────────────────────
   /**
