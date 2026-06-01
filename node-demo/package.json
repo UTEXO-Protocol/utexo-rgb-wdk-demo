@@ -14,8 +14,8 @@
   },
   "dependencies": {
     "@tetherto/wdk-wallet": "^1.0.0-beta.7",
-    "@utexo/rgb-lightning-node-nodejs": "github:UTEXO-Protocol/rgb-lightning-node-nodejs#v0.1.0-beta.7",
-    "@utexo/wdk-rgb-lightning": "github:UTEXO-Protocol/wdk-rgb-lightning#b0246a9",
+    "@utexo/rgb-lightning-node-nodejs": "github:UTEXO-Protocol/rgb-lightning-node-nodejs#v0.1.0-beta.8",
+    "@utexo/wdk-rgb-lightning": "github:UTEXO-Protocol/wdk-rgb-lightning#v0.1.0-beta.2",
     "bip39": "3.1.0"
   },
   "engines": {
