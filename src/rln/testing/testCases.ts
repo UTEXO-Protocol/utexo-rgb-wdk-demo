@@ -174,7 +174,7 @@ export const TEST_CASES: TestCase[] = [
     title: 'proxy endpoint validates',
     category: 'diag',
     async run (ctx) {
-      const endpoint = (ctx.state['env.proxy_endpoint'] as string) ?? 'rpc://127.0.0.1:3001/json-rpc'
+      const endpoint = (ctx.state['env.proxy_endpoint'] as string) ?? 'rpc://127.0.0.1:3000/json-rpc'
       return ctx.ext.checkProxyEndpoint(endpoint)
     }
   },
@@ -854,7 +854,7 @@ export const TEST_CASES: TestCase[] = [
             // serde `{ "Fungible": 1000 }` is REJECTED ("Failed to
             // deserialize the JSON body"). Must use the tagged form.
             assignment: { type: 'Fungible', value: 1000 },
-            transport_endpoints: ['rpc://127.0.0.1:3001/json-rpc']
+            transport_endpoints: ['rpc://127.0.0.1:3000/json-rpc']
           }]
         }
       })
@@ -1382,6 +1382,350 @@ export const TEST_CASES: TestCase[] = [
       }, 30000).catch(() => null)
       if (!settled) throw new Error('receiver-side did not settle within 30s after CSV + refresh (iter-2 B3)')
       return settled
+    }
+  },
+
+  // ─────────────────────── Phase 12.5: LSP integration ───────────────────────
+  // Cover the wallet→LSP HTTP surface added in @utexo/wdk-rgb-lightning
+  // (LspClient / lnurl-pay / payLightningAddress / requestLspRgbDeposit /
+  // payRgbViaLsp). Cases gate on `state['env.lsp_base_url']` being set
+  // — the iOS E2ETab and the Node runner both seed this from a host
+  // env / UI input. When the seed is empty t109 fails fast and the
+  // dependsOn chain skips the rest cleanly.
+  //
+  // Why these are smoke-shape, not end-to-end settlement:
+  //   1. Lightning Address minting is non-deterministic (haikunator
+  //      seeded from crypto/rand); the wallet has no discovery
+  //      endpoint to learn its assigned handle. We exercise the LNURL
+  //      flow only when a hand-pinned handle is provided.
+  //   2. Full bridge settlement takes minutes (rgb-lib confirmations
+  //      + cron tick). The runner already validates the underlying
+  //      `sendrgb` / `sendpayment` paths in t46/t67/t95. The LSP
+  //      cases here prove the HTTP layer round-trips and that the
+  //      LSP returns syntactically-valid invoices we can decode.
+  {
+    id: 't109.lspProbe',
+    title: 'LSP reachable at LSP_BASE_URL (skips downstream LSP cases if not)',
+    category: 'lsp',
+    async run (ctx) {
+      const baseUrl = (ctx.state['env.lsp_base_url'] as string | undefined) ?? ''
+      if (!baseUrl) throw new Error('LSP_BASE_URL not set — skipping LSP integration suite (set in env / E2ETab to enable)')
+      const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/health`).catch((e: Error) => { throw new Error(`LSP probe failed: ${e.message}`) })
+      if (!res.ok) throw new Error(`LSP /health HTTP ${res.status}`)
+      const body = await res.json().catch(() => ({}))
+      if (!body || body.ok !== true) throw new Error(`LSP /health unexpected body: ${JSON.stringify(body)}`)
+      ctx.state['lsp.base_url'] = baseUrl
+      return { baseUrl, body }
+    }
+  },
+  {
+    id: 't110.lspGetInfo',
+    title: 'LSP /get_info proxies upstream nodeinfo',
+    category: 'lsp',
+    dependsOn: ['t109.lspProbe'],
+    async run (ctx) {
+      const baseUrl = ctx.state['lsp.base_url'] as string
+      const res = await fetch(`${baseUrl}/get_info`)
+      if (!res.ok) throw new Error(`LSP /get_info HTTP ${res.status}`)
+      const info = await res.json() as { pubkey?: string }
+      if (typeof info?.pubkey !== 'string' || info.pubkey.length === 0) {
+        throw new Error(`LSP /get_info missing pubkey: ${JSON.stringify(info)}`)
+      }
+      // In the demo wiring the LSP points at the same peer RLN our
+      // suite uses as counterparty (t10/t21 stash that pubkey).
+      // Surface a soft warning if they diverge — useful sanity but
+      // not a hard failure (the LSP may target a different node in
+      // CI / staging).
+      const expected = ctx.state[PEER_PUBKEY_KEY] as string | undefined
+      const matches = expected ? expected === info.pubkey : null
+      return { lsp_pubkey: info.pubkey, matches_peer: matches }
+    }
+  },
+  {
+    id: 't111.lspLightningReceiveShape',
+    title: 'LSP /lightning_receive accepts (lnInvoice + rgb params) and returns rgb_invoice',
+    category: 'lsp',
+    dependsOn: ['t109.lspProbe', 't40.createInvoice', 't67.peerFundedAsset'],
+    blockedBy: 'lsp-server-config',
+    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in/i,
+    async run (ctx) {
+      const baseUrl = ctx.state['lsp.base_url'] as string
+      const assetId = ctx.state[ASSET_ID_NIA_KEY] as string | undefined
+      if (!assetId) throw new Error('no NIA asset id in state (t67 should have stashed one)')
+      // Mint a fresh local invoice so the LSP doesn't reject on
+      // dedup against the one t40 already used.
+      const inv = await ctx.ext.createInvoice({ amt_msat: 4000000, expiry_sec: 600 }) as { invoice: string }
+      if (!inv?.invoice) throw new Error(`createInvoice returned no invoice: ${JSON.stringify(inv)}`)
+      const res = await fetch(`${baseUrl}/lightning_receive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          ln_invoice: inv.invoice,
+          rgb_invoice: {
+            asset_id: assetId,
+            assignment: 'Any',
+            duration_seconds: 3600,
+            min_confirmations: 1,
+            witness: false
+          }
+        })
+      })
+      const text = await res.text()
+      if (!res.ok) throw new Error(`LSP /lightning_receive HTTP ${res.status}: ${text}`)
+      const body = JSON.parse(text) as { ln_invoice?: string, rgb_invoice?: string, mapping_id?: number }
+      if (typeof body.rgb_invoice !== 'string' || !body.rgb_invoice.startsWith('rgb:')) {
+        throw new Error(`LSP /lightning_receive returned malformed rgb_invoice: ${text}`)
+      }
+      if (typeof body.mapping_id !== 'number') {
+        throw new Error(`LSP /lightning_receive returned no mapping_id: ${text}`)
+      }
+      // Confirm the LSP-issued rgb invoice decodes locally — proves
+      // the round-trip end-to-end (LSP wallet ↔ LSP HTTP ↔ LSP's RLN
+      // ↔ rgb-lib).
+      const decoded = await ctx.ext.decodeRgbInvoice(body.rgb_invoice) as { asset_id?: string }
+      if (decoded?.asset_id !== assetId) {
+        throw new Error(`decoded rgb invoice has wrong asset_id: ${JSON.stringify(decoded)}`)
+      }
+      return { mapping_id: body.mapping_id, rgb_invoice: body.rgb_invoice.slice(0, 64) + '…' }
+    }
+  },
+  {
+    id: 't112.lspOnchainSendShape',
+    title: 'LSP /onchain_send accepts (rgbInvoice + ln params) and returns ln_invoice',
+    category: 'lsp',
+    dependsOn: ['t109.lspProbe', 't67.peerFundedAsset'],
+    blockedBy: 'lsp-server-config',
+    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in/i,
+    async run (ctx) {
+      const baseUrl = ctx.state['lsp.base_url'] as string
+      const assetId = ctx.state[ASSET_ID_NIA_KEY] as string | undefined
+      if (!assetId) throw new Error('no NIA asset id in state')
+      // Mint a local RGB invoice the LSP can fulfil. RLN's
+      // JsonRgbInvoiceRequest requires `witness` + `min_confirmations`;
+      // amount is encoded via `assignment_kind` + `assignment_amount`
+      // (Fungible(1) for an NIA receive of 1 unit). The earlier
+      // `amount: 1` shorthand was silently dropped by serde + a missing
+      // `witness` field caused the call to fail before reaching the LSP.
+      const recv = await ctx.ext.createRgbInvoice({
+        asset_id: assetId,
+        assignment_kind: 'Fungible',
+        assignment_amount: 1,
+        duration_seconds: 3600,
+        min_confirmations: 1,
+        witness: false
+      } as unknown as Parameters<typeof ctx.ext.createRgbInvoice>[0]) as { invoice: string }
+      if (!recv?.invoice) throw new Error(`createRgbInvoice returned nothing: ${JSON.stringify(recv)}`)
+      const res = await fetch(`${baseUrl}/onchain_send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          rgb_invoice: recv.invoice,
+          lninvoice: {
+            amt_msat: 3000000,
+            expiry_sec: 600,
+            asset_id: assetId,
+            asset_amount: 1
+          }
+        })
+      })
+      const text = await res.text()
+      if (!res.ok) throw new Error(`LSP /onchain_send HTTP ${res.status}: ${text}`)
+      const body = JSON.parse(text) as { ln_invoice?: string, rgb_invoice?: string, mapping_id?: number }
+      if (typeof body.ln_invoice !== 'string' || !body.ln_invoice.startsWith('lnbc')) {
+        throw new Error(`LSP /onchain_send returned malformed ln_invoice: ${text}`)
+      }
+      // Decode the BOLT11 the LSP issued — proves the LSP's RLN
+      // produced a valid invoice we'd be able to pay.
+      const decoded = await ctx.ext.decodeInvoice(body.ln_invoice) as { amt_msat?: number, asset_id?: string }
+      if (decoded?.amt_msat !== 3000000) {
+        throw new Error(`decoded LSP ln_invoice has wrong amt_msat: ${JSON.stringify(decoded)}`)
+      }
+      if (decoded?.asset_id !== assetId) {
+        // Soft: some LSP configs strip asset_id in regtest. Log but
+        // don't fail.
+        logEvent('info', 'lsp', 't112.lspOnchainSendShape', `LSP invoice decoded without asset_id (got ${decoded?.asset_id ?? 'undefined'})`, undefined, 't112.lspOnchainSendShape')
+      }
+      return { mapping_id: body.mapping_id, ln_invoice: body.ln_invoice.slice(0, 64) + '…' }
+    }
+  },
+
+  // APay receiver-side bootstrap. Calls SdkNode.apayNew(hostNodeId) which
+  // posts to the LSP's /internal/async_order/new endpoint and registers
+  // this wallet as an async-payments recipient. Round-trips through the
+  // new c-ffi + napi/bare wrappers (upstream PR #51).
+  {
+    id: 't113.apayNew',
+    title: 'apayNew round-trip: SdkNode.apayNew → LSP /internal/async_order/new',
+    category: 'lsp',
+    dependsOn: ['t110.lspGetInfo'],
+    blockedBy: 'lsp-server-config',
+    blockedByMatch: /timed out waiting for host response|async.*payments?.*not.*configured/i,
+    async run (ctx) {
+      const baseUrl = ctx.state['lsp.base_url'] as string
+      if (!baseUrl || baseUrl.length === 0) {
+        return { skipped: true, reason: 'env.lsp_base_url not set' }
+      }
+      const infoRes = await fetch(`${baseUrl}/get_info`)
+      if (!infoRes.ok) throw new Error(`LSP /get_info HTTP ${infoRes.status}`)
+      const info = await infoRes.json() as { pubkey?: string }
+      if (typeof info?.pubkey !== 'string' || info.pubkey.length === 0) {
+        throw new Error(`LSP /get_info missing pubkey: ${JSON.stringify(info)}`)
+      }
+      const resp = await (ctx.ext as unknown as { apayNew: (id: string) => Promise<Record<string, unknown>> }).apayNew(info.pubkey)
+      if (!resp || typeof resp !== 'object') {
+        throw new Error(`apayNew returned non-object: ${JSON.stringify(resp)}`)
+      }
+      if (typeof resp.request_id !== 'string' || resp.request_id.length === 0) {
+        throw new Error(`apayNew missing request_id: ${JSON.stringify(resp)}`)
+      }
+      if (typeof resp.accepted_through_index !== 'number' && typeof resp.accepted_through_index !== 'bigint') {
+        throw new Error(`apayNew missing/wrong accepted_through_index: ${JSON.stringify(resp)}`)
+      }
+      return {
+        host_node_id: info.pubkey.slice(0, 24) + '…',
+        request_id: String(resp.request_id).slice(0, 24) + '…',
+        order_id: resp.order_id,
+        status: resp.status,
+        accepted_through_index: resp.accepted_through_index,
+        next_index_expected: resp.next_index_expected,
+        unused_hashes: resp.unused_hashes,
+        refill_batch_size: resp.refill_batch_size
+      }
+    }
+  },
+
+  // ─────────────── Phase 12.5: LSP helper round-trips ───────────────
+  //
+  // These exercise the higher-level helpers in wdk-rgb-lightning's
+  // `lsp-helpers.js`. The helpers compose LspClient + the local RLN
+  // node — they were untested before, so "LSP done" was overclaiming.
+  // t114 validates the bootstrapLsp path Renat asked for (connectPeer
+  // + apayNew during init). t115/t116 exercise the deposit / pay
+  // bridges and are expected to surface a server-config error from
+  // utexo-lsp until SUPPORTED_ASSET_IDS lists our regtest assets.
+
+  // t114 — account.bootstrapLsp() one-shot.
+  {
+    id: 't114.bootstrapLsp',
+    title: 'bootstrapLsp connects peer + waits visible + apayNew',
+    category: 'lsp',
+    dependsOn: ['t110.lspGetInfo'],
+    async run (ctx) {
+      const baseUrl = ctx.state['lsp.base_url'] as string
+      if (!baseUrl) throw new Error('LSP_BASE_URL not set')
+      const peerHost = (ctx.state['env.peer_host'] as string | undefined) ?? '127.0.0.1'
+      const peerLnPort = (ctx.state['env.peer_ln_port'] as string | undefined) ?? '9736'
+      const infoRes = await fetch(`${baseUrl}/get_info`)
+      if (!infoRes.ok) throw new Error(`LSP /get_info HTTP ${infoRes.status}`)
+      const info = await infoRes.json() as { pubkey?: string }
+      if (typeof info?.pubkey !== 'string') {
+        throw new Error(`LSP /get_info missing pubkey: ${JSON.stringify(info)}`)
+      }
+      const result = await (ctx.ext as unknown as {
+        bootstrapLsp: (opts: { peerPubkeyAndAddr: string, hostNodeId?: string, waitForPeerMs?: number, pollIntervalMs?: number }) => Promise<{ connect: unknown, peerVisible: boolean, apay?: Record<string, unknown> }>
+      }).bootstrapLsp({
+        peerPubkeyAndAddr: `${info.pubkey}@${peerHost}:${peerLnPort}`,
+        hostNodeId: info.pubkey,
+        waitForPeerMs: 30000,
+        pollIntervalMs: 1000
+      })
+      if (!result || typeof result !== 'object') {
+        throw new Error(`bootstrapLsp returned non-object: ${JSON.stringify(result)}`)
+      }
+      if (result.peerVisible !== true) {
+        throw new Error(`bootstrapLsp: peerVisible was false after 30s — LDK didn't surface the peer`)
+      }
+      if (!result.apay || typeof result.apay !== 'object') {
+        throw new Error(`bootstrapLsp: apay missing despite hostNodeId set: ${JSON.stringify(result)}`)
+      }
+      const apay = result.apay as Record<string, unknown>
+      if (typeof apay.request_id !== 'string' || apay.request_id.length === 0) {
+        throw new Error(`bootstrapLsp.apay missing request_id: ${JSON.stringify(apay)}`)
+      }
+      return {
+        peerVisible: result.peerVisible,
+        apay_request_id: String(apay.request_id).slice(0, 24) + '…',
+        apay_order_id: apay.order_id,
+        apay_status: apay.status
+      }
+    }
+  },
+
+  // t115 — requestLspRgbDeposit (account helper).
+  {
+    id: 't115.requestLspRgbDeposit',
+    title: 'account.requestLspRgbDeposit: build LN invoice + post /lightning_receive',
+    category: 'lsp',
+    dependsOn: ['t110.lspGetInfo', 't40.createInvoice', 't67.peerFundedAsset'],
+    blockedBy: 'lsp-server-config',
+    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in/i,
+    async run (ctx) {
+      const baseUrl = ctx.state['lsp.base_url'] as string
+      const assetId = ctx.state[ASSET_ID_NIA_KEY] as string | undefined
+      if (!assetId) throw new Error('no NIA asset id in state')
+      const lnInvoice = ctx.state['invoice.last'] as string | undefined
+      if (typeof lnInvoice !== 'string') {
+        throw new Error('t40.createInvoice did not stash an invoice in ctx.state.invoice.last')
+      }
+      const result = await (ctx.ext as unknown as {
+        requestLspRgbDeposit: (args: { lsp: string, lnInvoice: string, rgb: Record<string, unknown> }) => Promise<{ lnInvoice: string, rgbInvoice: string, mappingId: number }>
+      }).requestLspRgbDeposit({
+        lsp: baseUrl,
+        lnInvoice,
+        rgb: {
+          assetId,
+          assignment: 'Any',
+          durationSeconds: 600,
+          witness: false
+        }
+      })
+      if (typeof result.rgbInvoice !== 'string' || result.rgbInvoice.length === 0) {
+        throw new Error(`requestLspRgbDeposit returned no rgbInvoice: ${JSON.stringify(result)}`)
+      }
+      return {
+        rgbInvoice: result.rgbInvoice.slice(0, 64) + '…',
+        mappingId: result.mappingId
+      }
+    }
+  },
+
+  // t116 — payRgbViaLsp (account helper).
+  {
+    id: 't116.payRgbViaLsp',
+    title: 'account.payRgbViaLsp: post /onchain_send + pay returned BOLT11',
+    category: 'lsp',
+    dependsOn: ['t110.lspGetInfo', 't67.peerFundedAsset'],
+    blockedBy: 'lsp-server-config',
+    blockedByMatch: /SUPPORTED_ASSET_IDS|asset.*not supported|asset_id .*not in/i,
+    async run (ctx) {
+      const baseUrl = ctx.state['lsp.base_url'] as string
+      const assetId = ctx.state[ASSET_ID_NIA_KEY] as string | undefined
+      if (!assetId) throw new Error('no NIA asset id in state')
+      const recv = await ctx.ext.createRgbInvoice({
+        asset_id: assetId,
+        assignment_kind: 'Fungible',
+        assignment_amount: 1,
+        duration_seconds: 600,
+        min_confirmations: 1,
+        witness: false
+      } as unknown as Parameters<typeof ctx.ext.createRgbInvoice>[0]) as { invoice?: string }
+      if (typeof recv?.invoice !== 'string') {
+        throw new Error(`createRgbInvoice returned nothing: ${JSON.stringify(recv)}`)
+      }
+      const result = await (ctx.ext as unknown as {
+        payRgbViaLsp: (args: { lsp: string, rgbInvoice: string, ln: Record<string, unknown> }) => Promise<{ lnInvoice: string, sendResult: unknown }>
+      }).payRgbViaLsp({
+        lsp: baseUrl,
+        rgbInvoice: recv.invoice,
+        ln: { amtMsat: 3000000, expirySec: 600, assetId, assetAmount: 1 }
+      })
+      if (typeof result.lnInvoice !== 'string' || !result.lnInvoice.startsWith('lnbc')) {
+        throw new Error(`payRgbViaLsp returned malformed lnInvoice: ${JSON.stringify(result)}`)
+      }
+      return {
+        lnInvoice: result.lnInvoice.slice(0, 64) + '…',
+        sendResult: result.sendResult
+      }
     }
   },
 

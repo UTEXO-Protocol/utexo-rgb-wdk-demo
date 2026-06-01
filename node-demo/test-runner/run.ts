@@ -18,7 +18,7 @@
 //   PEER_HOST_FOR_LN              # 127.0.0.1
 //   PEER_LN_PORT                  # 9736
 //   INDEXER_URL                   # tcp://127.0.0.1:50001
-//   PROXY_ENDPOINT                # rpc://127.0.0.1:3001/json-rpc
+//   PROXY_ENDPOINT                # rpc://127.0.0.1:3000/json-rpc
 //   E2E_CATEGORY                  # comma-separated filter; default = all
 //   WDK_MNEMONIC                  # 12-word BIP-39 seed (else read from .data)
 //   WDK_DATA_DIR                  # default ./.data
@@ -50,7 +50,7 @@ const ENV = {
   bitcoindHost: process.env.BITCOIND_HOST ?? '127.0.0.1',
   bitcoindPort: Number(process.env.BITCOIND_PORT ?? 18443),
   indexerUrl: process.env.INDEXER_URL ?? 'tcp://127.0.0.1:50001',
-  proxyEndpoint: process.env.PROXY_ENDPOINT ?? 'rpc://127.0.0.1:3001/json-rpc',
+  proxyEndpoint: process.env.PROXY_ENDPOINT ?? 'rpc://127.0.0.1:3000/json-rpc',
   peerBaseUrl: process.env.PEER_BASE_URL ?? 'http://127.0.0.1:3002',
   peerHostForLn: process.env.PEER_HOST_FOR_LN ?? '127.0.0.1',
   // 9736 matches the local regtest peer launched with
@@ -63,6 +63,15 @@ const ENV = {
   // — matches the "non-LSP" environment cleanly. Set
   // LSP_BASE_URL=http://127.0.0.1:8080 (or use ./lsp/up.sh) to enable.
   lspBaseUrl: process.env.LSP_BASE_URL ?? '',
+  // Optional VSS cloud backup target. When unset the wallet runs
+  // without VSS — t120 (vssBackupReplication) skips. When set, the
+  // wallet is constructed with vssUrl forwarded to RLN and t120
+  // verifies that state-changing ops replicate to the VSS server.
+  vssUrl: process.env.VSS_URL ?? '',
+  // Postgres container that backs the VSS server. Used by t120 to
+  // count vss_db rows pre/post state change as proof of replication.
+  // Defaults to the demo regtest stack name.
+  vssPostgresContainer: process.env.VSS_POSTGRES_CONTAINER ?? 'rgb-lightning-node-vss-postgres-1',
   categoryFilter: process.env.E2E_CATEGORY
 }
 
@@ -94,10 +103,18 @@ async function main (): Promise<void> {
   ensureDirs()
   const mnemonic = loadOrGenerateMnemonic()
   const ManagerCtor = WalletManagerRgbLightning as unknown as new (mn: string, opts: Record<string, unknown>) => { getAccount: (idx: number) => Promise<unknown> }
-  const manager = new ManagerCtor(mnemonic, {
+  const managerCfg: Record<string, unknown> = {
     network: ENV.network,
     dataDir: RLN_DIR
-  })
+  }
+  if (ENV.vssUrl) {
+    // Forward VSS config when set — Renat's dev plan calls VSS a first-
+    // alpha requirement; t120 validates replication. Loopback http
+    // accepted in regtest via vssAllowHttp.
+    managerCfg.vssUrl = ENV.vssUrl
+    managerCfg.vssAllowHttp = true
+  }
+  const manager = new ManagerCtor(mnemonic, managerCfg)
   const account = (await manager.getAccount(0)) as RglAccount & {
     unlock: (req: unknown) => Promise<unknown>
     getNodeInfo: () => Promise<{ pubkey?: string }>
@@ -130,7 +147,9 @@ async function main (): Promise<void> {
     'env.peer_ln_port': ENV.peerLnPort,
     'env.indexer_url': ENV.indexerUrl,
     'env.proxy_endpoint': ENV.proxyEndpoint,
-    'env.lsp_base_url': ENV.lspBaseUrl
+    'env.lsp_base_url': ENV.lspBaseUrl,
+    'env.vss_url': ENV.vssUrl,
+    'env.vss_postgres_container': ENV.vssPostgresContainer
   }
 
   const runner = new TestRunner(TEST_CASES, { ext, peer, chain, initialState })
