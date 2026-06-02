@@ -14,12 +14,15 @@ export type TestStatus = 'pending' | 'running' | 'pass' | 'fail' | 'skip' | 'exp
  *   - B2: asset channel coop close hangs at htlc-unsettled state.
  *   - B3: receiver-side stays in `future` after force close + on-chain
  *         settlement past CSV.
- *   - external-signer-mode: RLN's iter-1/iter-2 design explicitly
- *         rejects issueAssetNia/Ifa/Cfa/Uda + `inflate` (and on-chain
- *         RGB send + open-asset-channel-as-initiator) when the node
- *         is using `NativeExternalSigner`. The Rust handler raises
- *         `UnsupportedInExternalSignerMode` directly — not a bug.
- *         See rgb-lightning-node/src/routes.rs.
+ *   - external-signer-mode: RLN currently rejects only
+ *         `issueAssetNia/Ifa/Cfa/Uda` and `inflate` in external-signer
+ *         mode (the in-process signer is still required for those).
+ *         The rest of the on-chain surface — sendBtc, sendRgb,
+ *         createUtxos, and openChannel (BTC + RGB-asset variants) —
+ *         goes through the `*Begin → rgb_sign_psbt → *End` PSBT-split
+ *         path and works fine. The five rejected ops raise
+ *         `UnsupportedInExternalSignerMode` directly from the SDK
+ *         layer — not a bug. See rgb-lightning-node/src/sdk/mod.rs.
  *   - regtest-fee: bitcoind regtest doesn't accumulate fee history
  *         so `estimateFee` returns `Rln(Conflict)`. Not a bug — pass
  *         on testnet/mainnet, just noise here.
