@@ -24,7 +24,7 @@ export type TestStatus = 'pending' | 'running' | 'pass' | 'fail' | 'skip' | 'exp
  *         so `estimateFee` returns `Rln(Conflict)`. Not a bug — pass
  *         on testnet/mainnet, just noise here.
  */
-export type BlockedTag = 'iter-2-B1' | 'iter-2-B2' | 'iter-2-B3' | 'external-signer-mode' | 'regtest-fee' | 'lsp-server-config'
+export type BlockedTag = 'iter-2-B1' | 'iter-2-B2' | 'iter-2-B3' | 'external-signer-mode' | 'regtest-fee' | 'lsp-server-config' | 'vss-external-signer-gap'
 
 export interface TestContext {
   ext: LnExt

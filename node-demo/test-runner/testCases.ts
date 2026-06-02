@@ -1782,6 +1782,15 @@ export const TEST_CASES: TestCase[] = [
     title: 'VSS backup: state-changing op replicates to VSS postgres',
     category: 'system',
     dependsOn: ['t16.createUtxos'],
+    // Upstream RLN gap: in external-signer mode the internal mnemonic
+    // is None, so derive_vss_identity() returns None and the VssClient
+    // is never created (ldk.rs:3093). vssBackup() throws "VSS is not
+    // configured" and the server-side vss_db gets zero rows. Our SDK
+    // surface (vssUrl init + vssBackup wallet method) is correctly
+    // wired — the gap is upstream needs to derive the VSS signing key
+    // through the external signer instead of requiring the mnemonic.
+    blockedBy: 'vss-external-signer-gap',
+    blockedByMatch: /VSS is not configured|FailedVssInit|replication did not advance/i,
     async run (ctx) {
       const vssUrl = (ctx.state['env.vss_url'] as string | undefined) ?? ''
       if (!vssUrl) {
