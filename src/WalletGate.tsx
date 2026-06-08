@@ -9,7 +9,7 @@ import React, { useState } from 'react'
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useWalletManager } from '@tetherto/wdk-react-native-core'
 import type { WdkAppState } from '@tetherto/wdk-react-native-core'
-import { RgbScreen } from './RgbScreen'
+import { RgbLightningScreen } from './RgbLightningScreen'
 
 const WALLET_ID = 'rgb-demo-wallet'
 
@@ -58,7 +58,12 @@ export function WalletGate ({ state }: { state: WdkAppState }) {
   }
 
   if (state.status === 'READY') {
-    return <RgbScreen mnemonicToBackup={shownMnemonic} />
+    // Demo focuses on RGB Lightning. The on-chain RGB tab and its
+    // connect-gate were dropped because `useAccount({network:'rgb'})`
+    // constructs `WalletAccountRgb` which hard-connects to the indexer
+    // on construction — without a reachable electrum server (regtest
+    // stack), it errors and useAddressLoader retries forever.
+    return <RgbLightningScreen />
   }
 
   if (state.status === 'LOCKED') {
