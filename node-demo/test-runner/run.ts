@@ -72,6 +72,14 @@ const ENV = {
   // count vss_db rows pre/post state change as proof of replication.
   // Defaults to the demo regtest stack name.
   vssPostgresContainer: process.env.VSS_POSTGRES_CONTAINER ?? 'rgb-lightning-node-vss-postgres-1',
+  // Opt-in virtual-channels-v0 mode for the APay flow. RLN's async_order
+  // forward is gated on a `trusted_no_broadcast` (virtual) channel
+  // between device and the host peer — see `allows_peer()`. When set,
+  // the wallet enables virtual channels and t30 opens the BTC channel
+  // with `virtual_open_mode: trusted_no_broadcast`, which unblocks
+  // t113/t114 (apayNew). Requires the peer launched with
+  // `--enable-virtual-channels-v0 --virtual-peer-pubkeys <device>`.
+  apayVirtual: (process.env.APAY_VIRTUAL ?? '') === '1',
   categoryFilter: process.env.E2E_CATEGORY
 }
 
@@ -114,6 +122,12 @@ async function main (): Promise<void> {
     managerCfg.vssUrl = ENV.vssUrl
     managerCfg.vssAllowHttp = true
   }
+  if (ENV.apayVirtual) {
+    // APay's async_order forward requires a trusted_no_broadcast (virtual)
+    // channel to the host peer — enable virtual channels on the device so
+    // t30 can open one.
+    managerCfg.enableVirtualChannelsV0 = true
+  }
   const manager = new ManagerCtor(mnemonic, managerCfg)
   const account = (await manager.getAccount(0)) as RglAccount & {
     unlock: (req: unknown) => Promise<unknown>
@@ -149,7 +163,8 @@ async function main (): Promise<void> {
     'env.proxy_endpoint': ENV.proxyEndpoint,
     'env.lsp_base_url': ENV.lspBaseUrl,
     'env.vss_url': ENV.vssUrl,
-    'env.vss_postgres_container': ENV.vssPostgresContainer
+    'env.vss_postgres_container': ENV.vssPostgresContainer,
+    'env.apay_virtual': ENV.apayVirtual
   }
 
   const runner = new TestRunner(TEST_CASES, { ext, peer, chain, initialState })

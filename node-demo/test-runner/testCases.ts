@@ -456,6 +456,12 @@ export const TEST_CASES: TestCase[] = [
       // daemon's openChannel handler rejects synchronously. Re-issuing
       // connectPeer + a short wait usually clears it within 1-2 tries
       // (same retry shape as t100.coopCloseBtc).
+      // When APAY_VIRTUAL is set, open this channel as a virtual
+      // (trusted_no_broadcast) channel so RLN's async_order forward
+      // accepts it (the host peer's `allows_peer()` requires a
+      // trusted_no_broadcast channel with the device). Virtual channels
+      // are not broadcast on-chain, so they must be private.
+      const apayVirtual = ctx.state['env.apay_virtual'] === true
       let r: { temporary_channel_id?: string; channel_id?: string } | undefined
       let lastOpenErr: string | null = null
       for (let attempt = 0; attempt < 4; attempt++) {
@@ -464,8 +470,9 @@ export const TEST_CASES: TestCase[] = [
             peer_pubkey_and_opt_addr: peer,
             capacity_sat: 200000,
             push_msat: 100000000,
-            public: true,
-            with_anchors: true
+            public: !apayVirtual,
+            with_anchors: true,
+            ...(apayVirtual ? { virtual_open_mode: 'trusted_no_broadcast' } : {})
           })
           break
         } catch (e) {
