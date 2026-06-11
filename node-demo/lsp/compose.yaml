@@ -69,10 +69,12 @@ services:
       LIGHTNING_ADDRESS_MIN_SENDABLE_MSAT: "1000"
       LIGHTNING_ADDRESS_MAX_SENDABLE_MSAT: "100000000"
 
-      # APay (async-payments) gate. Wallets in v1 don't need APay, but
-      # the LSP still enforces the bearer token if it's set — leave
-      # blank to keep the /internal/* endpoints disabled.
-      APAY_BEARER_TOKEN: ""
+      # APay (async-payments) gate. The peer RLN forwards the device's
+      # /apay/new registrations to the LSP's /internal/async_order/new
+      # endpoint, authenticated with this bearer token — it MUST match
+      # the peer RLN's `--lsp-bearer-token`. Empty disables the
+      # /internal/* endpoints (APay off). Override via LSP_APAY_BEARER_TOKEN.
+      APAY_BEARER_TOKEN: "${LSP_APAY_BEARER_TOKEN:-demo-apay-token}"
 
       # IMPORTANT: an empty allowlist BLOCKS all asset-bound flows in
       # this LSP version (see api.go ensureAssetSupported). For the

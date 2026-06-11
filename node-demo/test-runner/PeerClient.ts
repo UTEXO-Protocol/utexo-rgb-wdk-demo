@@ -46,8 +46,20 @@ export class PeerClient {
    * polling because the peer's background sync doesn't tick fast enough
    * on regtest to observe newly-mined funding-tx confirmations and send
    * `channel_ready` in a timely fashion.
+   *
+   * RLN v0.5.2 changed `/sync` to require an explicit
+   * `{ options: { keychain, strategy } }` body (an empty body now 400s).
+   * The keychain is one of `{"Vanilla":{"lookback":N}}` (BTC) or
+   * `"Colored"` (RGB) — a single call covers one keychain, so we sync both:
+   * Vanilla to surface BTC funding-tx confirmations (channel-ready), and
+   * Colored to surface RGB asset-transfer confirmations (settlement).
    */
-  async sync (): Promise<unknown> { return this.post('/sync', {}) }
+  async sync (): Promise<unknown> {
+    await this.post('/sync', { options: { keychain: { Vanilla: { lookback: 20 } }, strategy: 'FastSync' } })
+      .catch(() => undefined)
+    return this.post('/sync', { options: { keychain: 'Colored', strategy: 'FastSync' } })
+      .catch(() => undefined)
+  }
 
   // ─── Peers / channels ──────────────────────────────────────────────
   async connectPeer (peerPubkeyAndAddr: string): Promise<unknown> {
@@ -103,7 +115,10 @@ export class PeerClient {
     return this.post('/sendrgb', req)
   }
   async refreshTransfers (req: Record<string, unknown> = {}): Promise<unknown> {
-    return this.post('/refreshtransfers', req)
+    // RLN v0.5.2's RefreshRequest requires `filter` + `skip_sync` (an
+    // empty body 400s). `asset_id` is optional. Default the required
+    // fields; callers can still override via `req`.
+    return this.post('/refreshtransfers', { filter: [], skip_sync: false, ...req })
   }
 
   // ─── Low-level ─────────────────────────────────────────────────────
