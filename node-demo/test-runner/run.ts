@@ -80,6 +80,11 @@ const ENV = {
   // t113/t114 (apayNew). Requires the peer launched with
   // `--enable-virtual-channels-v0 --virtual-peer-pubkeys <device>`.
   apayVirtual: (process.env.APAY_VIRTUAL ?? '') === '1',
+  // Host peer (LSP) node_id the device should trust for virtual channels.
+  // In production every mobile client sets virtualPeerPubkeys=[LSP id]
+  // so RLN's `allows_peer` accepts the LSP's trusted_no_broadcast
+  // channel. Defaults to the regtest peer's node_id.
+  peerNodeId: process.env.PEER_NODE_ID ?? '',
   categoryFilter: process.env.E2E_CATEGORY
 }
 
@@ -127,6 +132,10 @@ async function main (): Promise<void> {
     // channel to the host peer — enable virtual channels on the device so
     // t30 can open one.
     managerCfg.enableVirtualChannelsV0 = true
+    // Trust the host peer (LSP) for virtual channels. Mirrors the
+    // production contract: virtualPeerPubkeys=[LSP node_id]. The peer is
+    // launched with the reciprocal --virtual-peer-pubkeys <device>.
+    if (ENV.peerNodeId) managerCfg.virtualPeerPubkeys = [ENV.peerNodeId]
   }
   const manager = new ManagerCtor(mnemonic, managerCfg)
   const account = (await manager.getAccount(0)) as RglAccount & {

@@ -1437,7 +1437,11 @@ export const TEST_CASES: TestCase[] = [
     async run (ctx) {
       const baseUrl = (ctx.state['env.lsp_base_url'] as string | undefined) ?? ''
       if (!baseUrl) throw new Error('LSP_BASE_URL not set — skipping LSP integration suite (set in env to enable)')
-      const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/health`).catch((e: Error) => { throw new Error(`LSP probe failed: ${e.message}`) })
+      // Every raw fetch in the LSP suite carries a deadline. Without one,
+      // a lost response on a kept-alive socket blocks the await forever
+      // and wedges the entire suite (observed live: t111 hung 45+ min
+      // while the LSP answered fresh requests in <1ms).
+      const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/health`, { signal: AbortSignal.timeout(20000) }).catch((e: Error) => { throw new Error(`LSP probe failed: ${e.message}`) })
       if (!res.ok) throw new Error(`LSP /health HTTP ${res.status}`)
       const body = await res.json().catch(() => ({}))
       if (!body || body.ok !== true) throw new Error(`LSP /health unexpected body: ${JSON.stringify(body)}`)
@@ -1452,7 +1456,7 @@ export const TEST_CASES: TestCase[] = [
     dependsOn: ['t109.lspProbe'],
     async run (ctx) {
       const baseUrl = ctx.state['lsp.base_url'] as string
-      const res = await fetch(`${baseUrl}/get_info`)
+      const res = await fetch(`${baseUrl}/get_info`, { signal: AbortSignal.timeout(20000) })
       if (!res.ok) throw new Error(`LSP /get_info HTTP ${res.status}`)
       const info = await res.json() as { pubkey?: string }
       if (typeof info?.pubkey !== 'string' || info.pubkey.length === 0) {
@@ -1485,6 +1489,7 @@ export const TEST_CASES: TestCase[] = [
       if (!inv?.invoice) throw new Error(`createInvoice returned no invoice: ${JSON.stringify(inv)}`)
       const res = await fetch(`${baseUrl}/lightning_receive`, {
         method: 'POST',
+        signal: AbortSignal.timeout(20000),
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
           ln_invoice: inv.invoice,
@@ -1544,6 +1549,7 @@ export const TEST_CASES: TestCase[] = [
       if (!recv?.invoice) throw new Error(`createRgbInvoice returned nothing: ${JSON.stringify(recv)}`)
       const res = await fetch(`${baseUrl}/onchain_send`, {
         method: 'POST',
+        signal: AbortSignal.timeout(20000),
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({
           rgb_invoice: recv.invoice,
@@ -1599,7 +1605,7 @@ export const TEST_CASES: TestCase[] = [
       }
       // Find the LSP's node_id. /get_info returns `pubkey` (LSP-side
       // field name); apay_new wants the host_node_id (the same value).
-      const infoRes = await fetch(`${baseUrl}/get_info`)
+      const infoRes = await fetch(`${baseUrl}/get_info`, { signal: AbortSignal.timeout(20000) })
       if (!infoRes.ok) throw new Error(`LSP /get_info HTTP ${infoRes.status}`)
       const info = await infoRes.json() as { pubkey?: string }
       if (typeof info?.pubkey !== 'string' || info.pubkey.length === 0) {
@@ -1664,7 +1670,7 @@ export const TEST_CASES: TestCase[] = [
       // in the demo compose).
       const peerHost = (ctx.state['env.peer_host'] as string | undefined) ?? '127.0.0.1'
       const peerLnPort = (ctx.state['env.peer_ln_port'] as string | undefined) ?? '9736'
-      const infoRes = await fetch(`${baseUrl}/get_info`)
+      const infoRes = await fetch(`${baseUrl}/get_info`, { signal: AbortSignal.timeout(20000) })
       if (!infoRes.ok) throw new Error(`LSP /get_info HTTP ${infoRes.status}`)
       const info = await infoRes.json() as { pubkey?: string }
       if (typeof info?.pubkey !== 'string') {
